@@ -13,7 +13,7 @@ AUDIO_ONLY_FLAGS=(
   --disable-avdevice
   --disable-swscale
   --disable-postproc
-  --disable-avresample
+  # --disable-avresample # REMOVED: This flag is obsolete and caused the build to fail.
   --disable-network
 
   # Enable essential components
@@ -54,7 +54,7 @@ AUDIO_ONLY_FLAGS=(
 CONF_FLAGS=(
   # === Original Essential Flags ===
   --target-os=none              # disable target specific configs
-  --arch=x86_32                 # use x86_32 arch
+  --arch=x88_32                 # use x86_32 arch
   --enable-cross-compile        # use cross compile configs
   --disable-asm                 # disable asm
   --disable-stripping           # disable stripping as it won't work
@@ -72,9 +72,8 @@ CONF_FLAGS=(
   --cxx=em++
   --objcc=emcc
   --dep-cc=emcc
-  #
-  # === OPTIMIZATIONS: Added -msimd128 to enable WASM SIMD support ===
-  #
+
+  # === OPTIMIZATIONS ===
   --extra-cflags="-msimd128 -s INITIAL_MEMORY=33554432 -O3 -flto"
   --extra-ldflags="-msimd128 -s INITIAL_MEMORY=33554432 -O3 -flto"
 
@@ -85,5 +84,10 @@ CONF_FLAGS=(
   "${AUDIO_ONLY_FLAGS[@]}"
 )
 
-emconfigure ./configure "${CONF_FLAGS[@]}" "$@"
+#
+# The "$@" at the end of the original command was passing through all of the
+# unwanted flags from the Dockerfile. We have removed it to ensure only
+# our CONF_FLAGS are used.
+#
+emconfigure ./configure "${CONF_FLAGS[@]}"
 emmake make -j
