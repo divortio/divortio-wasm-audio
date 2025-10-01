@@ -5,15 +5,11 @@ set -euo pipefail
 #
 # divortio-wasm-audio: Custom Audio-Only Build Configuration
 #
-# We add our custom flags here. The script will combine these with the
-# essential build flags below.
-#
 AUDIO_ONLY_FLAGS=(
   --disable-all
   --disable-avdevice
   --disable-swscale
   --disable-postproc
-  # --disable-avresample # REMOVED: This flag is obsolete and caused the build to fail.
   --disable-network
 
   # Enable essential components
@@ -53,25 +49,25 @@ AUDIO_ONLY_FLAGS=(
 
 CONF_FLAGS=(
   # === Original Essential Flags ===
-  --target-os=none              # disable target specific configs
-  --arch=x88_32                 # use x86_32 arch
-  --enable-cross-compile        # use cross compile configs
-  --disable-asm                 # disable asm
-  --disable-stripping           # disable stripping as it won't work
-  --disable-programs            # disable ffmpeg, ffprobe and ffplay build
-  --disable-doc                 # disable doc build
-  --disable-debug               # disable debug mode
-  --disable-runtime-cpudetect   # disable cpu detection
-  --disable-autodetect          # disable env auto detect
+  --target-os=none
+  --arch=x86_32
+  --enable-cross-compile
+  --disable-asm
+  --disable-stripping
+  --disable-programs
+  --disable-doc
+  --disable-debug
+  --disable-runtime-cpudetect
+  --disable-autodetect
 
   # assign toolchains and extra flags
   --nm=emnm
   --ar=emar
   --ranlib=emranlib
-  --cc=emcc
-  --cxx=em++
-  --objcc=emcc
-  --dep-cc=emcc
+  --cc="ccache emcc"
+  --cxx="ccache em++"
+  --objcc="ccache emcc"
+  --dep-cc="ccache emcc"
 
   # === OPTIMIZATIONS ===
   --extra-cflags="-msimd128 -s INITIAL_MEMORY=33554432 -O3 -flto"
@@ -84,10 +80,5 @@ CONF_FLAGS=(
   "${AUDIO_ONLY_FLAGS[@]}"
 )
 
-#
-# The "$@" at the end of the original command was passing through all of the
-# unwanted flags from the Dockerfile. We have removed it to ensure only
-# our CONF_FLAGS are used.
-#
 emconfigure ./configure "${CONF_FLAGS[@]}"
 emmake make -j

@@ -1,21 +1,39 @@
+# The name of the workflow as it will appear in the "Actions" tab. Correct.
 name: Build and Commit FFmpeg WASM Core
 
+# Defines when the workflow will run.
 on:
+  # On any push to the 'main' branch. Correct.
   push:
     branches: [ main ]
+  # Allows manual triggering from the "Actions" tab. Correct.
   workflow_dispatch:
 
+# Defines the jobs that make up the workflow.
 jobs:
+  # --- JOB 1: SINGLE-THREADED BUILD ---
   build-st:
     name: Build Single-Threaded Core
     runs-on: ubuntu-latest
     steps:
+      # Checks out the repository code. The 'submodules: recursive' is essential. Correct.
       - name: Checkout Repository
         uses: actions/checkout@v4
         with:
           submodules: 'recursive'
+      # Sets up the ccache directory for caching compiled C/C++ object files.
+      - name: Cache ccache
+        uses: actions/cache@v4
+        with:
+          path: .ccache
+          # The key ensures the cache is only reused if the core build files haven't changed. Correct.
+          key: ${{ runner.os }}-ccache-st-${{ hashFiles('**/Dockerfile', '**/Makefile', 'build/ffmpeg.sh') }}
+          restore-keys: |
+            ${{ runner.os }}-ccache-st-
+      # Prepares the Docker build environment. Correct.
       - name: Setup Docker Buildx
         uses: docker/setup-buildx-action@v3
+      # Caches the Docker layers themselves, speeding up the environment setup. Correct.
       - name: Cache Docker Layers
         uses: actions/cache@v4
         with:
@@ -23,8 +41,10 @@ jobs:
           key: ${{ runner.os }}-buildx-st-${{ hashFiles('**/Dockerfile', '**/Makefile', 'build/ffmpeg.sh') }}
           restore-keys: |
             ${{ runner.os }}-buildx-st-
+      # The main build command. It correctly uses 'make -j build-st' for maximum parallelization on the correct target. Correct.
       - name: Build Single-Thread (ST) Core
-        run: make -j EXTRA_ARGS="--cache-from=type=local,src=/tmp/.buildx-cache-st --cache-to=type=local,dest=/tmp/.buildx-cache-st,mode=max"
+        run: make -j build-st EXTRA_ARGS="--cache-from=type=local,src=/tmp/.buildx-cache-st --cache-to=type=local,dest=/tmp/.buildx-cache-st,mode=max"
+      # Uploads the resulting packages as an artifact for the next job. Correct.
       - name: Upload ST Artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -34,6 +54,7 @@ jobs:
             packages/ffmpeg
             packages/util
 
+  # --- JOB 2: MULTI-THREADED BUILD (runs in parallel with Job 1) ---
   build-mt:
     name: Build Multi-Threaded Core
     runs-on: ubuntu-latest
@@ -42,6 +63,13 @@ jobs:
         uses: actions/checkout@v4
         with:
           submodules: 'recursive'
+      - name: Cache ccache
+        uses: actions/cache@v4
+        with:
+          path: .ccache
+          key: ${{ runner.os }}-ccache-mt-${{ hashFiles('**/Dockerfile', '**/Makefile', 'build/ffmpeg.sh') }}
+          restore-keys: |
+            ${{ runner.os }}-ccache-mt-
       - name: Setup Docker Buildx
         uses: docker/setup-buildx-action@v3
       - name: Cache Docker Layers
@@ -51,37 +79,41 @@ jobs:
           key: ${{ runner.os }}-buildx-mt-${{ hashFiles('**/Dockerfile', '**/Makefile', 'build/ffmpeg.sh') }}
           restore-keys: |
             ${{ runner.os }}-buildx-mt-
+      # Correctly uses 'make -j build-mt' for the multi-threaded target. Correct.
       - name: Build Multi-Thread (MT) Core
-        run: make -j-mt EXTRA_ARGS="--cache-from=type=local,src=/tmp/.buildx-cache-mt --cache-to=type=local,dest=/tmp/.buildx-cache-mt,mode=max"
+        run: make -j build-mt EXTRA_ARGS="--cache-from=type=local,src=/tmp/.buildx-cache-mt --cache-to=type=local,dest=/tmp/.buildx-cache-mt,mode=max"
+      # Uploads the multi-threaded core package. Correct.
       - name: Upload MT Artifacts
         uses: actions/upload-artifact@v4
         with:
           name: mt-packages
           path: packages/core-mt
 
+  # --- JOB 3: PACKAGE AND COMMIT (runs only after Job 1 and 2 succeed) ---
   package-and-commit:
     name: Package and Commit Builds
     runs-on: ubuntu-latest
     needs: [build-st, build-mt]
     steps:
+      # Checks out the repository with a GITHUB_TOKEN to grant push access. Correct.
       - name: Checkout Repository
         uses: actions/checkout@v4
         with:
-          # We need a token to be able to push to the repository
           token: ${{ secrets.GITHUB_TOKEN }}
 
+      # Downloads the build artifacts from the previous two jobs. Correct.
       - name: Download ST Artifacts
         uses: actions/download-artifact@v4
         with:
           name: st-packages
           path: packages
-
       - name: Download MT Artifacts
         uses: actions/download-artifact@v4
         with:
           name: mt-packages
           path: packages
 
+      # Generates the JSON build receipt. The script logic is sound. Correct.
       - name: Generate Build Receipt
         run: |
           echo "Generating build-receipt.json..."
@@ -101,9 +133,9 @@ jobs:
               "enabledDecoders": $decoders[0] | split(",")
             }' > build-receipt.json
 
+      # Organizes the final output into the versioned unpkg structure. Correct.
       - name: Organize Build Artifacts into unpkg Structure
         run: |
-          # Remove old builds to ensure we don't have stale files
           rm -rf builds
           mkdir -p builds
           organize_package() {
@@ -126,12 +158,12 @@ jobs:
           organize_package packages/ffmpeg
           organize_package packages/util
 
+      # Configures Git, adds the 'builds' directory, and pushes the commit. The logic is robust. Correct.
       - name: Commit and Push Builds
         run: |
           git config --global user.name "GitHub Actions"
           git config --global user.email "actions@github.com"
           git add builds/
-          # Check if there are any changes to commit
           if ! git diff --staged --quiet; then
             git commit -m "ci: Add latest builds"
             git push

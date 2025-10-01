@@ -18,7 +18,7 @@ ENV PKG_CONFIG_PATH=$PKG_CONFIG_PATH:$EM_PKG_CONFIG_PATH
 ENV FFMPEG_ST=$FFMPEG_ST
 ENV FFMPEG_MT=$FFMPEG_MT
 RUN apt-get update && \
-      apt-get install -y pkg-config autoconf automake libtool ragel
+      apt-get install -y ccache pkg-config autoconf automake libtool ragel
 
 # Build x264
 FROM emsdk-base AS x264-builder
