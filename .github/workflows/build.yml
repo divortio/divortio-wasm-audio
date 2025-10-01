@@ -1,0 +1,35 @@
+name: Build FFmpeg WASM Core
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build Audio Core
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          submodules: 'recursive'
+
+      - name: Build Single-Thread (ST) Core
+        run: make -j
+
+      - name: Build Multi-Thread (MT) Core
+        run: make -j-mt
+
+      - name: Organize Build Artifacts
+        run: |
+          mkdir -p builds/core builds/core-mt
+          cp -r packages/core/dist/* builds/core/
+          cp -r packages/core-mt/dist/* builds/core-mt/
+
+      - name: Upload Build Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ffmpeg-audio-core
+          path: builds/
