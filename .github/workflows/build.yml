@@ -16,20 +16,44 @@ jobs:
         with:
           submodules: 'recursive'
 
-      - name: Build Single-Thread (ST) Core
-        run: make -j
-
-      - name: Build Multi-Thread (MT) Core
-        run: make -j-mt
-
-      - name: Organize Build Artifacts
+      - name: Build All Packages
         run: |
-          mkdir -p builds/core builds/core-mt
-          cp -r packages/core/dist/* builds/core/
-          cp -r packages/core-mt/dist/* builds/core-mt/
+          make -j
+          make -j-mt
+
+      - name: Organize Build Artifacts into unpkg Structure
+        id: organize
+        run: |
+          # Create the top-level builds directory
+          mkdir -p builds
+
+          # Function to read version from package.json and create folder
+          organize_package() {
+            PKG_PATH=$1
+            PKG_NAME=$(basename $PKG_PATH)
+            PKG_VERSION=$(jq -r .version "$PKG_PATH/package.json")
+            TARGET_DIR="builds/$PKG_NAME@$PKG_VERSION"
+
+            echo "Packaging $PKG_NAME@$PKG_VERSION..."
+            mkdir -p "$TARGET_DIR"
+            cp -r "$PKG_PATH/dist" "$TARGET_DIR/"
+            # Also copy README if it exists
+            if [ -f "$PKG_PATH/README.md" ]; then
+              cp "$PKG_PATH/README.md" "$TARGET_DIR/"
+            fi
+          }
+
+          # Organize all four packages
+          organize_package packages/core
+          organize_package packages/core-mt
+          organize_package packages/ffmpeg
+          organize_package packages/util
+
+          echo "Final directory structure:"
+          ls -R builds
 
       - name: Upload Build Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: ffmpeg-audio-core
+          name: ffmpeg-audio-dist
           path: builds/
