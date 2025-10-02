@@ -1,172 +1,83 @@
-# The name of the workflow as it will appear in the "Actions" tab. Correct.
-name: Build and Commit FFmpeg WASM Core
+package-and-commit:
+  name: Package and Commit Builds
+  runs-on: ubuntu-latest
+  needs: [build-st, build-mt]
+  steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
 
-# Defines when the workflow will run.
-on:
-  # On any push to the 'main' branch. Correct.
-  push:
-    branches: [ main ]
-  # Allows manual triggering from the "Actions" tab. Correct.
-  workflow_dispatch:
+    - name: Download ST Artifacts
+      uses: actions/download-artifact@v4
+      with:
+        name: st-packages
+        path: packages
 
-# Defines the jobs that make up the workflow.
-jobs:
-  # --- JOB 1: SINGLE-THREADED BUILD ---
-  build-st:
-    name: Build Single-Threaded Core
-    runs-on: ubuntu-latest
-    steps:
-      # Checks out the repository code. The 'submodules: recursive' is essential. Correct.
-      - name: Checkout Repository
-        uses: actions/checkout@v4
-        with:
-          submodules: 'recursive'
-      # Sets up the ccache directory for caching compiled C/C++ object files.
-      - name: Cache ccache
-        uses: actions/cache@v4
-        with:
-          path: .ccache
-          # The key ensures the cache is only reused if the core build files haven't changed. Correct.
-          key: ${{ runner.os }}-ccache-st-${{ hashFiles('**/Dockerfile', '**/Makefile', 'build/ffmpeg.sh') }}
-          restore-keys: |
-            ${{ runner.os }}-ccache-st-
-      # Prepares the Docker build environment. Correct.
-      - name: Setup Docker Buildx
-        uses: docker/setup-buildx-action@v3
-      # Caches the Docker layers themselves, speeding up the environment setup. Correct.
-      - name: Cache Docker Layers
-        uses: actions/cache@v4
-        with:
-          path: /tmp/.buildx-cache-st
-          key: ${{ runner.os }}-buildx-st-${{ hashFiles('**/Dockerfile', '**/Makefile', 'build/ffmpeg.sh') }}
-          restore-keys: |
-            ${{ runner.os }}-buildx-st-
-      # The main build command. It correctly uses 'make -j build-st' for maximum parallelization on the correct target. Correct.
-      - name: Build Single-Thread (ST) Core
-        run: make -j build-st EXTRA_ARGS="--cache-from=type=local,src=/tmp/.buildx-cache-st --cache-to=type=local,dest=/tmp/.buildx-cache-st,mode=max"
-      # Uploads the resulting packages as an artifact for the next job. Correct.
-      - name: Upload ST Artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: st-packages
-          path: |
-            packages/core
-            packages/ffmpeg
-            packages/util
+    - name: Download MT Artifacts
+      uses: actions/download-artifact@v4
+      with:
+        name: mt-packages
+        path: packages
 
-  # --- JOB 2: MULTI-THREADED BUILD (runs in parallel with Job 1) ---
-  build-mt:
-    name: Build Multi-Threaded Core
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
-        with:
-          submodules: 'recursive'
-      - name: Cache ccache
-        uses: actions/cache@v4
-        with:
-          path: .ccache
-          key: ${{ runner.os }}-ccache-mt-${{ hashFiles('**/Dockerfile', '**/Makefile', 'build/ffmpeg.sh') }}
-          restore-keys: |
-            ${{ runner.os }}-ccache-mt-
-      - name: Setup Docker Buildx
-        uses: docker/setup-buildx-action@v3
-      - name: Cache Docker Layers
-        uses: actions/cache@v4
-        with:
-          path: /tmp/.buildx-cache-mt
-          key: ${{ runner.os }}-buildx-mt-${{ hashFiles('**/Dockerfile', '**/Makefile', 'build/ffmpeg.sh') }}
-          restore-keys: |
-            ${{ runner.os }}-buildx-mt-
-      # Correctly uses 'make -j build-mt' for the multi-threaded target. Correct.
-      - name: Build Multi-Thread (MT) Core
-        run: make -j build-mt EXTRA_ARGS="--cache-from=type=local,src=/tmp/.buildx-cache-mt --cache-to=type=local,dest=/tmp/.buildx-cache-mt,mode=max"
-      # Uploads the multi-threaded core package. Correct.
-      - name: Upload MT Artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: mt-packages
-          path: packages/core-mt
+    # --- THIS IS THE CORRECTED STEP ---
+    - name: Generate Build Receipt
+      run: |
+        echo "Generating build-receipt.json..."
+        # Gracefully get filter, encoder, and decoder text, defaulting to an empty string if not found
+        FILTERS_TEXT=$(grep -o '\\--enable-filter=[^ ]*' build/ffmpeg.sh | cut -d '=' -f 2 | tr '\n' ',' | sed 's/,$//') || true
+        ENCODERS_TEXT=$(grep -o '\\--enable-encoder=[^ ]*' build/ffmpeg.sh | cut -d '=' -f 2) || true
+        DECODERS_TEXT=$(grep -o '\\--enable-decoder=[^ ]*' build/ffmpeg.sh | cut -d '=' -f 2) || true
+        BUILD_DATE=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+        
+        jq -n \
+          --arg filters "$FILTERS_TEXT" \
+          --arg encoders "$ENCODERS_TEXT" \
+          --arg decoders "$DECODERS_TEXT" \
+          --arg date "$BUILD_DATE" \
+          '{
+            "buildDate": $date,
+            "enabledFilters": (if $filters == "" or $filters == null then [] else $filters | split(",") end),
+            "enabledEncoders": (if $encoders == "" or $encoders == null then [] else $encoders | split(",") end),
+            "enabledDecoders": (if $decoders == "" or $decoders == null then [] else $decoders | split(",") end)
+          }' > build-receipt.json
+        
+        echo "Receipt generated:"
+        cat build-receipt.json
+    # --- END OF CORRECTED STEP ---
 
-  # --- JOB 3: PACKAGE AND COMMIT (runs only after Job 1 and 2 succeed) ---
-  package-and-commit:
-    name: Package and Commit Builds
-    runs-on: ubuntu-latest
-    needs: [build-st, build-mt]
-    steps:
-      # Checks out the repository with a GITHUB_TOKEN to grant push access. Correct.
-      - name: Checkout Repository
-        uses: actions/checkout@v4
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-
-      # Downloads the build artifacts from the previous two jobs. Correct.
-      - name: Download ST Artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: st-packages
-          path: packages
-      - name: Download MT Artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: mt-packages
-          path: packages
-
-      # Generates the JSON build receipt. The script logic is sound. Correct.
-      - name: Generate Build Receipt
-        run: |
-          echo "Generating build-receipt.json..."
-          FILTERS=$(grep -o '\\--enable-filter=[^ ]*' build/ffmpeg.sh | cut -d '=' -f 2 | jq -R . | jq -s .)
-          ENCODERS=$(grep -o '\\--enable-encoder=[^ ]*' build/ffmpeg.sh | cut -d '=' -f 2 | jq -R . | jq -s .)
-          DECODERS=$(grep -o '\\--enable-decoder=[^ ]*' build/ffmpeg.sh | cut -d '=' -f 2 | jq -R . | jq -s .)
-          BUILD_DATE=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-          jq -n \
-            --argjson filters "$FILTERS" \
-            --argjson encoders "$ENCODERS" \
-            --argjson decoders "$DECODERS" \
-            --arg date "$BUILD_DATE" \
-            '{
-              "buildDate": $date,
-              "enabledFilters": $filters[0] | split(","),
-              "enabledEncoders": $encoders[0] | split(","),
-              "enabledDecoders": $decoders[0] | split(",")
-            }' > build-receipt.json
-
-      # Organizes the final output into the versioned unpkg structure. Correct.
-      - name: Organize Build Artifacts into unpkg Structure
-        run: |
-          rm -rf builds
-          mkdir -p builds
-          organize_package() {
-            PKG_PATH=$1
-            PKG_NAME=$(basename $PKG_PATH)
-            PKG_VERSION=$(jq -r .version "$PKG_PATH/package.json")
-            TARGET_DIR="builds/$PKG_NAME@$PKG_VERSION"
-            echo "Packaging $PKG_NAME@$PKG_VERSION..."
-            mkdir -p "$TARGET_DIR"
-            cp -r "$PKG_PATH/dist" "$TARGET_DIR/"
-            if [ -f "$PKG_PATH/README.md" ]; then
-              cp "$PKG_PATH/README.md" "$TARGET_DIR/"
-            fi
-            if [[ "$PKG_NAME" == "core" || "$PKG_NAME" == "core-mt" ]]; then
-              cp build-receipt.json "$TARGET_DIR/"
-            fi
-          }
-          organize_package packages/core
-          organize_package packages/core-mt
-          organize_package packages/ffmpeg
-          organize_package packages/util
-
-      # Configures Git, adds the 'builds' directory, and pushes the commit. The logic is robust. Correct.
-      - name: Commit and Push Builds
-        run: |
-          git config --global user.name "GitHub Actions"
-          git config --global user.email "actions@github.com"
-          git add builds/
-          if ! git diff --staged --quiet; then
-            git commit -m "ci: Add latest builds"
-            git push
-          else
-            echo "No changes to commit."
+    - name: Organize Build Artifacts into unpkg Structure
+      run: |
+        rm -rf builds
+        mkdir -p builds
+        organize_package() {
+          PKG_PATH=$1
+          PKG_NAME=$(basename $PKG_PATH)
+          PKG_VERSION=$(jq -r .version "$PKG_PATH/package.json")
+          TARGET_DIR="builds/$PKG_NAME@$PKG_VERSION"
+          echo "Packaging $PKG_NAME@$PKG_VERSION..."
+          mkdir -p "$TARGET_DIR"
+          cp -r "$PKG_PATH/dist" "$TARGET_DIR/"
+          if [ -f "$PKG_PATH/README.md" ]; then
+            cp "$PKG_PATH/README.md" "$TARGET_DIR/"
           fi
+          if [[ "$PKG_NAME" == "core" || "$PKG_NAME" == "core-mt" ]]; then
+            cp build-receipt.json "$TARGET_DIR/"
+          fi
+        }
+        organize_package packages/core
+        organize_package packages/core-mt
+        organize_package packages/ffmpeg
+        organize_package packages/util
+
+    - name: Commit and Push Builds
+      run: |
+        git config --global user.name "GitHub Actions"
+        git config --global user.email "actions@github.com"
+        git add builds/
+        if ! git diff --staged --quiet; then
+          git commit -m "ci: Add latest builds"
+          git push
+        else
+          echo "No changes to commit."
+        fi
