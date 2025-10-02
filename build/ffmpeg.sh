@@ -2,19 +2,6 @@
 
 set -euo pipefail
 
-# --- NEW SECTION: Build fdk-aac from source ---
-# This ensures libfdk_aac is compiled and available before we configure FFmpeg.
-git clone --depth 1 https://github.com/mstorsjo/fdk-aac.git
-cd fdk-aac
-emconfigure ./autogen.sh
-emconfigure ./configure \
-  --prefix=${PREFIX} \
-  --disable-shared
-emmake make -j
-emmake make install
-cd ..
-# --- END OF NEW SECTION ---
-
 #
 # divortio-wasm-audio: Custom Audio-Only Build Configuration
 #
@@ -32,14 +19,14 @@ AUDIO_ONLY_FLAGS=(
   --enable-swresample
 
   # Enable external libraries & licenses
-  --enable-nonfree
   --enable-gpl
   --enable-libmp3lame
-  --enable-libfdk_aac
+  # --enable-libfdk_aac # REMOVED
   --enable-libopus
 
   # Enable specific encoders, decoders, demuxers, muxers, and parsers
-  --enable-encoder=libmp3lame,libfdk_aac,libopus,flac,pcm_s16le
+  # REMOVED libfdk_aac from the encoder list
+  --enable-encoder=libmp3lame,aac,libopus,flac,pcm_s16le
   --enable-decoder=mp3,aac,opus,flac,pcm_s16le
   --enable-demuxer=mov,matroska,mp3,ogg,flac,wav
   --enable-muxer=mp4,mp3,ogg,flac,wav
@@ -62,6 +49,7 @@ AUDIO_ONLY_FLAGS=(
 
 CONF_FLAGS=(
   # === Original Essential Flags ===
+  --prefix=${PREFIX:-/src/dist}
   --target-os=none
   --arch=x86_32
   --enable-cross-compile
