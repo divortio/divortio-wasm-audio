@@ -2,6 +2,19 @@
 
 set -euo pipefail
 
+# --- NEW SECTION: Build fdk-aac from source ---
+# This ensures libfdk_aac is compiled and available before we configure FFmpeg.
+git clone --depth 1 https://github.com/mstorsjo/fdk-aac.git
+cd fdk-aac
+emconfigure ./autogen.sh
+emconfigure ./configure \
+  --prefix=${PREFIX} \
+  --disable-shared
+emmake make -j
+emmake make install
+cd ..
+# --- END OF NEW SECTION ---
+
 #
 # divortio-wasm-audio: Custom Audio-Only Build Configuration
 #
