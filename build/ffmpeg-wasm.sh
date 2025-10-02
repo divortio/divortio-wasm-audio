@@ -13,23 +13,23 @@ CONF_FLAGS=(
   -I$INSTALL_DIR/include 
   -L$INSTALL_DIR/lib 
   -Llibavcodec 
-  -Llibavdevice 
-  -Llibavfilter 
-  -Llibavformat 
-  -Llibavutil 
-  -Llibpostproc 
-  -Llibswresample 
-  -Llibswscale 
-  -lavcodec 
-  -lavdevice 
-  -lavfilter 
-  -lavformat 
-  -lavutil 
-  -lpostproc 
-  -lswresample 
-  -lswscale 
-  -Wno-deprecated-declarations 
-  $LDFLAGS 
+  # -Llibavdevice     # REMOVED: This library is disabled in our audio-only build
+  -Llibavfilter
+  -Llibavformat
+  -Llibavutil
+  # -Llibpostproc     # REMOVED: This library is disabled in our audio-only build
+  -Llibswresample
+  # -Llibswscale      # REMOVED: This library is disabled in our audio-only build
+  -lavcodec
+  # -lavdevice        # REMOVED: This library is disabled in our audio-only build
+  -lavfilter
+  -lavformat
+  -lavutil
+  # -lpostproc        # REMOVED: This library is disabled in our audio-only build
+  -lswresample
+  # -lswscale         # REMOVED: This library is disabled in our audio-only build
+  -Wno-deprecated-declarations
+  $LDFLAGS
   -sENVIRONMENT=worker
   -sWASM_BIGINT                            # enable big int support
   -sUSE_SDL=2                              # use emscripten SDL2 lib port
@@ -44,14 +44,14 @@ CONF_FLAGS=(
   -lworkerfs.js
   --pre-js src/bind/ffmpeg/bind.js        # extra bindings, contains most of the ffmpeg.wasm javascript code
   # ffmpeg source code
-  src/fftools/cmdutils.c 
-  src/fftools/ffmpeg.c 
-  src/fftools/ffmpeg_filter.c 
-  src/fftools/ffmpeg_hw.c 
-  src/fftools/ffmpeg_mux.c 
-  src/fftools/ffmpeg_opt.c 
-  src/fftools/opt_common.c 
-  src/fftools/ffprobe.c 
+  src/fftools/cmdutils.c
+  src/fftools/ffmpeg.c
+  src/fftools/ffmpeg_filter.c
+  src/fftools/ffmpeg_hw.c
+  src/fftools/ffmpeg_mux.c
+  src/fftools/ffmpeg_opt.c
+  src/fftools/opt_common.c
+  src/fftools/ffprobe.c
 )
 
 emcc "${CONF_FLAGS[@]}" $@
