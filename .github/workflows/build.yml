@@ -1,4 +1,4 @@
-name: Build and Commit FFmpeg WASM Core
+name: Build, Commit, and Release FFmpeg WASM Core
 
 on:
   push:
@@ -6,8 +6,8 @@ on:
   workflow_dispatch:
 
 jobs:
-  build-wasm-st:
-    name: 1. Build Single-Threaded WASM Core
+  build-st-and-js:
+    name: Build ST Core and JS Packages
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Repository
@@ -32,14 +32,25 @@ jobs:
             ${{ runner.os }}-buildx-st-
       - name: Build Single-Thread (ST) Core
         run: make -j build-st EXTRA_ARGS="--cache-from=type=local,src=/tmp/.buildx-cache-st --cache-to=type=local,dest=/tmp/.buildx-cache-st,mode=max"
-      - name: Upload ST Core Artifact
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+      - name: Install JS Dependencies
+        run: npm install
+      - name: Build JS Packages
+        run: npm run build
+      - name: Upload ST and JS Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: core-st-pkg
-          path: packages/core
+          name: st-js-packages
+          path: |
+            packages/core
+            packages/ffmpeg
+            packages/util
 
-  build-wasm-mt:
-    name: 2. Build Multi-Threaded WASM Core
+  build-mt:
+    name: Build Multi-Threaded Core
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Repository
@@ -70,48 +81,26 @@ jobs:
           name: core-mt-pkg
           path: packages/core-mt
 
-  build-js:
-    name: 3. Build JavaScript Packages
-    runs-on: ubuntu-latest
-    needs: build-wasm-st # This job depends on the single-threaded core
-    steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
-      - name: Download ST Core Artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: core-st-pkg
-          path: packages/core
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '18'
-      - name: Install JS Dependencies
-        run: npm install
-      - name: Build JS Packages
-        run: npm run build
-      - name: Upload JS Artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: js-pkgs
-          path: |
-            packages/ffmpeg
-            packages/util
-
   package-and-commit:
-    name: 4. Package and Commit All Builds
+    name: Package and Commit Builds
     runs-on: ubuntu-latest
-    needs: [build-wasm-mt, build-js] # This final job depends on both the MT core and the JS packages
+    needs: [build-st-and-js, build-mt]
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Download All Artifacts
+      - name: Download ST and JS Artifacts
         uses: actions/download-artifact@v4
         with:
+          name: st-js-packages
           path: packages
+      - name: Download MT Core Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: core-mt-pkg
+          path: packages/core-mt
 
       - name: Make Scripts Executable
         run: chmod +x scripts/*.sh
@@ -124,3 +113,35 @@ jobs:
 
       - name: Commit and Push Builds
         run: ./scripts/commit_builds.sh
+
+      - name: Upload Final Builds Directory
+        uses: actions/upload-artifact@v4
+        with:
+          name: final-builds
+          path: builds/
+
+  # --- NEW RELEASE JOB ---
+  release:
+    name: Create GitHub Release
+    runs-on: ubuntu-latest
+    needs: package-and-commit # Depends on the successful commit of the builds
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Download Final Builds
+        uses: actions/download-artifact@v4
+        with:
+          name: final-builds
+          path: builds
+
+      - name: Make Scripts Executable
+        run: chmod +x scripts/*.sh
+
+      - name: Create and Publish Release
+        run: ./scripts/create_release.sh
+        env:
+          # The GITHUB_TOKEN is required by the GitHub CLI to create a release.
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
