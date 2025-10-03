@@ -12,8 +12,8 @@
 #      and copies the essential build artifacts ('dist/', 'README.md', and
 #      the build receipt) into it.
 #   2. Validation: It performs critical checks to ensure that the core
-#      build artifacts (like .wasm files) exist and are not empty. If
-#      validation fails, the script will exit with an error.
+#      build artifacts (like .wasm and .worker.js files) exist and are not
+#      empty. If validation fails, the script will exit with an error.
 #   3. "Latest" Sync: It creates a version-agnostic directory (e.g., 'core')
 #      that mirrors the content of the most recently built versioned
 #      directory, providing a stable path for developers.
@@ -33,36 +33,55 @@ set -euo pipefail
 #
 # Validates the contents of a newly packaged build directory.
 #
+# This function checks for the existence and non-zero size of critical files.
+# For the multi-threaded core, it now robustly searches for the worker file
+# anywhere within the 'dist' directory to handle variations in build output.
+#
 # @param $1: The path to the newly created versioned directory (e.g., "builds/core@0.12.10").
 # @param $2: The name of the package (e.g., "core").
 #
 validate_package() {
   local target_dir="$1"
   local pkg_name="$2"
-  local files_to_check=()
+  # Use an associative array to map file names to their validation status.
+  declare -A files_to_check
 
   echo "  - Running validation for $pkg_name..."
+  echo "  - Contents of ${target_dir}/dist:"
+  ls -R "${target_dir}/dist"
 
+  # Define the critical files for each package.
   case "$pkg_name" in
     core)
-      files_to_check+=("$target_dir/dist/esm/ffmpeg-core.wasm")
+      files_to_check["ffmpeg-core.wasm"]=false
       ;;
     core-mt)
-      files_to_check+=("$target_dir/dist/esm/ffmpeg-core.wasm")
-      files_to_check+=("$target_dir/dist/esm/ffmpeg-core.worker.js")
+      files_to_check["ffmpeg-core.wasm"]=false
+      files_to_check["ffmpeg-core.worker.js"]=false
       ;;
     ffmpeg|util)
-      files_to_check+=("$target_dir/dist/esm/index.js")
+      files_to_check["index.js"]=false
       ;;
   esac
 
-  for file_path in "${files_to_check[@]}"; do
-    if [ ! -s "$file_path" ]; then
-      echo "❌ VALIDATION FAILED: Critical file is missing or empty: $file_path"
+  # Search for the files within the entire dist directory.
+  # The `find` command is more robust than a hardcoded path.
+  for file in "${!files_to_check[@]}"; do
+    # Find the file, check if it exists and has a size > 0.
+    # The `-s` flag in `find` checks for non-empty files.
+    found_path=$(find "$target_dir/dist" -name "$file" -type f -size +0c -print -quit)
+    if [ -n "$found_path" ]; then
+      files_to_check["$file"]=true
+      local file_size=$(stat -c%s "$found_path")
+      echo "  ✔️  OK: Found $found_path ($file_size bytes)."
+    fi
+  done
+
+  # After searching, loop through our checklist and see if any file was not found.
+  for file in "${!files_to_check[@]}"; do
+    if [ "${files_to_check[$file]}" = false ]; then
+      echo "❌ VALIDATION FAILED: Critical file is missing or empty: $file"
       exit 1
-    else
-      local file_size=$(stat -c%s "$file_path")
-      echo "  ✔️  OK: Found $file_path ($file_size bytes)."
     fi
   done
 }
@@ -97,31 +116,23 @@ organize_package() {
 #
 # Creates a version-agnostic "latest" directory for a package.
 #
-# This function copies the contents from the most recently built versioned
-# directory to a stable, non-versioned path (e.g., 'builds/core'). This
-# provides a convenient way for developers to always access the latest build.
-#
 # @param $1: The name of the package (e.g., "core").
 #
 sync_latest() {
   local pkg_name="$1"
-  # Read the version from the source package.json, which is the "latest" version by definition.
   local pkg_version=$(jq -r .version "packages/$pkg_name/package.json")
   local source_dir="builds/$pkg_name@$pkg_version"
   local dest_dir="builds/$pkg_name"
 
   echo "Syncing 'latest' directory for $pkg_name..."
 
-  # Ensure the source directory from the current build exists before proceeding.
   if [ ! -d "$source_dir" ]; then
     echo "❌ SYNC FAILED: Source directory does not exist: $source_dir"
     exit 1
   fi
 
-  # Remove the old "latest" directory to ensure a clean sync.
   rm -rf "$dest_dir"
   mkdir -p "$dest_dir"
-  # Copy the contents. The '-a' flag preserves file attributes.
   cp -a "$source_dir"/* "$dest_dir/"
 
   echo "  ✔️  OK: Synced '$source_dir' to '$dest_dir'."
