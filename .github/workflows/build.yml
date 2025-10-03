@@ -32,14 +32,11 @@ jobs:
             ${{ runner.os }}-buildx-st-
       - name: Build Single-Thread (ST) Core
         run: make -j build-st EXTRA_ARGS="--cache-from=type=local,src=/tmp/.buildx-cache-st --cache-to=type=local,dest=/tmp/.buildx-cache-st,mode=max"
-      - name: Upload ST Artifacts
+      - name: Upload ST Core Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: st-packages
-          path: |
-            packages/core
-            packages/ffmpeg
-            packages/util
+          name: core-st-pkg
+          path: packages/core
 
   build-mt:
     name: Build Multi-Threaded Core
@@ -67,10 +64,10 @@ jobs:
             ${{ runner.os }}-buildx-mt-
       - name: Build Multi-Thread (MT) Core
         run: make -j build-mt EXTRA_ARGS="--cache-from=type=local,src=/tmp/.buildx-cache-mt --cache-to=type=local,dest=/tmp/.buildx-cache-mt,mode=max"
-      - name: Upload MT Artifacts
+      - name: Upload MT Core Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: mt-packages
+          name: core-mt-pkg
           path: packages/core-mt
 
   package-and-commit:
@@ -83,17 +80,28 @@ jobs:
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Download ST Artifacts
+      # Download the compiled WASM cores into their correct locations
+      - name: Download ST Core Artifact
         uses: actions/download-artifact@v4
         with:
-          name: st-packages
-          path: packages
-
-      - name: Download MT Artifacts
+          name: core-st-pkg
+          path: packages/core
+      - name: Download MT Core Artifact
         uses: actions/download-artifact@v4
         with:
-          name: mt-packages
+          name: core-mt-pkg
           path: packages/core-mt
+
+      # --- NEW STEPS to build the JS packages ---
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+      - name: Install JS Dependencies
+        run: npm install
+      - name: Build JS Packages
+        run: npx lerna run build --stream --scope=@ffmpeg/util --scope=@ffmpeg/ffmpeg
+      # --- END OF NEW STEPS ---
 
       - name: Make Scripts Executable
         run: chmod +x scripts/*.sh
