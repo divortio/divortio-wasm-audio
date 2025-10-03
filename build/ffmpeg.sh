@@ -2,15 +2,13 @@
 
 set -euo pipefail
 
-#
-# divortio-wasm-audio: Custom Audio-Only Build Configuration
-#
 AUDIO_ONLY_FLAGS=(
   --disable-all
   --disable-avdevice
   --disable-swscale
   --disable-postproc
   --disable-network
+  --disable-doc
 
   # Enable essential components
   --enable-avcodec
@@ -21,11 +19,9 @@ AUDIO_ONLY_FLAGS=(
   # Enable external libraries & licenses
   --enable-gpl
   --enable-libmp3lame
-  # --enable-libfdk_aac # REMOVED
   --enable-libopus
 
   # Enable specific encoders, decoders, demuxers, muxers, and parsers
-  # REMOVED libfdk_aac from the encoder list
   --enable-encoder=libmp3lame,aac,libopus,flac,pcm_s16le
   --enable-decoder=mp3,aac,opus,flac,pcm_s16le
   --enable-demuxer=mov,matroska,mp3,ogg,flac,wav
@@ -55,8 +51,7 @@ CONF_FLAGS=(
   --enable-cross-compile
   --disable-asm
   --disable-stripping
-  --disable-programs
-  --disable-doc
+  # --disable-programs # REMOVED: This is critical for your use case and for multi-threading.
   --disable-debug
   --disable-runtime-cpudetect
   --disable-autodetect
