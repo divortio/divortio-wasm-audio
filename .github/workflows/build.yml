@@ -33,7 +33,7 @@ jobs:
       - name: Build Single-Thread (ST) Core
         run: make -j build-st EXTRA_ARGS="--cache-from=type=local,src=/tmp/.buildx-cache-st --cache-to=type=local,dest=/tmp/.buildx-cache-st,mode=max"
 
-      # --- Build JS Packages in the same job ---
+      # --- Build JS Packages in the same job AFTER the core is built ---
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
@@ -41,7 +41,8 @@ jobs:
       - name: Install JS Dependencies
         run: npm install
       - name: Build JS Packages
-        run: npx lerna run build --stream --scope=@ffmpeg/util --scope=@ffmpeg/ffmpeg
+        # This is the correct, top-level command that uses Lerna to build all JS packages.
+        run: npm run build
 
       - name: Upload ST and JS Artifacts
         uses: actions/upload-artifact@v4
