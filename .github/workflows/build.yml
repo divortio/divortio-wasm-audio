@@ -6,7 +6,7 @@
 # itself, but instead calls reusable workflows and dedicated scripts to perform
 # each task in a highly parallel and resilient manner.
 #
-# The pipeline is organized into four logical phases:
+# The pipeline is organized into five logical phases:
 #
 #   Phase 0: Pre-Build Checks
 #     - A single, fast job to lint the codebase and install dependencies,
@@ -15,21 +15,19 @@
 #
 #   Phase 1: Build Binaries (Parallel)
 #     - Two jobs that run in parallel to compile the single-threaded and
-#       multi-threaded WASM cores. These are the most time-consuming steps.
+#       multi-threaded WASM cores.
 #
 #   Phase 2: Build JS Wrappers (Parallel)
 #     - Four jobs that run in parallel to build the ESM and UMD variants of
-#       the @ffmpeg/util and @ffmpeg/ffmpeg packages. These depend on the
-#       WASM core builds.
+#       the @ffmpeg/util and @ffmpeg/ffmpeg packages.
 #
 #   Phase 3: Package Individual Components (Parallel)
-#     - Four jobs that run in parallel, each responsible for taking the raw
-#       artifacts from a specific component (e.g., core-mt) and organizing
-#       them into the final, versioned build structure.
+#     - Four jobs that run in parallel, each responsible for organizing a
+#       specific component into its final, versioned build structure.
 #
 #   Phase 4: Coalesce and Finalize (Sequential)
-#     - The final jobs that gather all the individually packaged components,
-#       commit them to the repository, and create a formal GitHub Release.
+#     - The final jobs that gather all packaged components, commit them to
+#       the repository, and create a formal GitHub Release.
 #
 
 name: Build, Commit, and Release FFmpeg WASM Core
@@ -60,15 +58,14 @@ jobs:
       - name: Install Dependencies
         run: npm install
       - name: Run Linter on Safe Packages
-        # Instead of 'npm run lint', we use lerna to run the 'lint' script
-        # only on the packages that we know do not have upstream errors.
-        # We are intentionally skipping @ffmpeg/ffmpeg to allow the build to proceed.
-        run: npx lerna run lint --scope=@ffmpeg/util
-        
+        # This is the correct way to run a script in a specific workspace.
+        # We are intentionally skipping @ffmpeg/ffmpeg to avoid upstream linting errors.
+        run: npm run lint --workspace=@ffmpeg/util
+
   # --- Phase 1: Build WASM Cores (Parallel) ---
   build-wasm-st:
     name: 1a. Build WASM Core (ST)
-    needs: pre-build-checks # Depends on the initial sanity checks.
+    needs: pre-build-checks
     uses: ./.github/workflows/reusable-build-wasm.yml
     with:
       target: build-st
@@ -94,7 +91,7 @@ jobs:
     with:
       package_name: util
       format: esm
-      needs_wasm: false # @ffmpeg/util has no dependency on the WASM core.
+      needs_wasm: false
       artifact_name: util-esm-dist
 
   build-util-umd:
@@ -109,7 +106,7 @@ jobs:
 
   build-ffmpeg-esm:
     name: 2c. Build ffmpeg (ESM)
-    needs: [build-wasm-st, build-util-esm, build-util-umd] # Depends on the core and util packages.
+    needs: [build-wasm-st, build-util-esm, build-util-umd]
     uses: ./.github/workflows/reusable-build-js.yml
     with:
       package_name: ffmpeg
@@ -215,12 +212,11 @@ jobs:
       - uses: actions/checkout@v4
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
-      # Download all individually packaged build directories into one place.
       - uses: actions/download-artifact@v4
         with:
           path: builds
       - run: chmod +x scripts/*.sh
-      # The receipt needs the source JS packages to exist to read their versions.
+      # The receipt and commit scripts need the source packages to read their versions.
       - uses: actions/download-artifact@v4
         with:
           name: core-st-pkg
@@ -231,7 +227,6 @@ jobs:
           path: packages/core-mt
       - run: ./scripts/create_build_receipt.sh
       - run: ./scripts/commit_builds.sh
-      # Upload the final, complete builds directory for the release job.
       - uses: actions/upload-artifact@v4
         with:
           name: final-builds
