@@ -3,8 +3,8 @@
 # build-js-package.sh
 #
 # This script builds a specific variant (ESM or UMD) of a single JavaScript
-# package. It has been updated to handle the build dependency chain where the
-# UMD build of @ffmpeg/util requires a CJS build to be completed first.
+# package. It has been updated to handle the build dependency chain and the
+# correct working directory for Webpack.
 #
 # Arguments:
 #   $1 (PACKAGE_NAME): The name of the package to build (e.g., "util", "ffmpeg").
@@ -32,18 +32,19 @@ case "$PACKAGE_NAME" in
   util)
     case "$FORMAT" in
       esm)
-        # For ESM, we use the TypeScript compiler (tsc) with the ESM tsconfig.
+        # For ESM, we can run tsc from the root as its config paths are explicit.
         npx tsc --build "packages/util/tsconfig.esm.json"
         ;;
       umd)
-        # --- THIS IS THE CRITICAL FIX ---
-        # The UMD build (using Webpack) depends on the CJS build being completed first.
-        # We now run both commands in the correct order.
+        # The UMD build (using Webpack) depends on the CJS build.
         echo "  - Building CJS dependency for UMD bundle..."
         npx tsc --build "packages/util/tsconfig.cjs.json"
 
+        # --- THIS IS THE CRITICAL FIX ---
+        # We must change into the package's directory before running webpack
+        # so that its relative config paths resolve correctly.
         echo "  - Building UMD bundle with Webpack..."
-        npx webpack --config "packages/util/webpack.config.cjs"
+        (cd "packages/util" && npx webpack)
         ;;
       *)
         echo "❌ ERROR: Invalid format '$FORMAT' for package '$PACKAGE_NAME'."
@@ -54,11 +55,12 @@ case "$PACKAGE_NAME" in
   ffmpeg)
     case "$FORMAT" in
       esm)
-        # The ffmpeg package does not have the same dependency chain.
         npx tsc --build "packages/ffmpeg/tsconfig.esm.json"
         ;;
       umd)
-        npx webpack --config "packages/ffmpeg/webpack.config.js"
+        # Apply the same fix for the ffmpeg package's UMD build.
+        echo "  - Building UMD bundle with Webpack..."
+        (cd "packages/ffmpeg" && npx webpack)
         ;;
       *)
         echo "❌ ERROR: Invalid format '$FORMAT' for package '$PACKAGE_NAME'."

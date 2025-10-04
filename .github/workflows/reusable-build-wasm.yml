@@ -13,7 +13,8 @@
 #   2. Sets up a dual-layer cache (ccache and Docker layers) to speed up
 #      subsequent builds. The cache key is dynamic based on the inputs.
 #   3. Executes the specified 'make' target to compile the WASM core.
-#   4. Uploads the resulting compiled package as a uniquely named artifact.
+#   4. Uploads the resulting compiled package AND the 'build' directory as a
+#      uniquely named artifact.
 #
 
 name: Reusable WASM Core Build
@@ -84,9 +85,12 @@ jobs:
         run: make -j ${{ inputs.target }} EXTRA_ARGS="--cache-from=type=local,src=/tmp/.buildx-cache-${{ inputs.cache_suffix }} --cache-to=type=local,dest=/tmp/.buildx-cache-${{ inputs.cache_suffix }},mode=max"
 
       # Step 6: Upload the final compiled package as an artifact.
-      # The name and path are taken from the workflow inputs.
+      # It now uploads both the compiled package (e.g., packages/core) AND the
+      # 'build' directory, which contains the scripts needed for receipt generation.
       - name: Upload WASM Core Artifact
         uses: actions/upload-artifact@v4
         with:
           name: ${{ inputs.artifact_name }}
-          path: ${{ inputs.artifact_path }}
+          path: |
+            ${{ inputs.artifact_path }}
+            build/
