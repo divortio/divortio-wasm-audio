@@ -1,35 +1,6 @@
 #
 # build.yml - The Main Build Orchestrator
 #
-# This workflow is the master Directed Acyclic Graph (DAG) for the entire
-# build, package, commit, and release pipeline. It contains no build logic
-# itself, but instead calls reusable workflows and dedicated scripts to perform
-# each task in a highly parallel and resilient manner.
-#
-# The pipeline is organized into five logical phases:
-#
-#   Phase 0: Pre-Build Checks
-#     - A single, fast job to lint the codebase and install dependencies,
-#       ensuring the repository is in a sane state before starting any
-#       long-running compilations.
-#
-#   Phase 1: Build Binaries (Parallel)
-#     - Two jobs that run in parallel to compile the single-threaded and
-#       multi-threaded WASM cores.
-#
-#   Phase 2: Build JS Wrappers (Parallel)
-#     - Four jobs that run in parallel to build the ESM and UMD variants of
-#       the @ffmpeg/util and @ffmpeg/ffmpeg packages.
-#
-#   Phase 3: Package Individual Components (Parallel)
-#     - Four jobs that run in parallel, each responsible for organizing a
-#       specific component into its final, versioned build structure.
-#
-#   Phase 4: Coalesce and Finalize (Sequential)
-#     - The final jobs that gather all packaged components, commit them to
-#       the repository, and create a formal GitHub Release.
-#
-
 name: Build, Commit, and Release FFmpeg WASM Core
 
 on:
@@ -37,8 +8,6 @@ on:
     branches: [ main ]
   workflow_dispatch:
 
-# Grant write permissions to the contents of the repository, which is
-# required for the final jobs to commit files and create a release.
 permissions:
   contents: write
 
@@ -53,15 +22,15 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '18'
+          # --- UPDATED LINE ---
+          node-version: '22'
           cache: 'npm'
       - name: Install Dependencies
         run: npm install
       - name: Run Linter on Safe Packages
-        # This is the correct way to run a script in a specific workspace.
-        # We are intentionally skipping @ffmpeg/ffmpeg to avoid upstream linting errors.
         run: npm run lint --workspace=@ffmpeg/util
 
+  # ... (The rest of this file remains the same)
   # --- Phase 1: Build WASM Cores (Parallel) ---
   build-wasm-st:
     name: 1a. Build WASM Core (ST)
@@ -216,7 +185,6 @@ jobs:
         with:
           path: builds
       - run: chmod +x scripts/*.sh
-      # The receipt and commit scripts need the source packages to read their versions.
       - uses: actions/download-artifact@v4
         with:
           name: core-st-pkg
@@ -242,7 +210,6 @@ jobs:
         with:
           name: final-builds
           path: builds
-      # The release script also needs the source packages to read their versions.
       - uses: actions/download-artifact@v4
         with:
           name: core-st-pkg
