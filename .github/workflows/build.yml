@@ -1,3 +1,37 @@
+#
+# build.yml - The Main Build Orchestrator
+#
+# This workflow is the master Directed Acyclic Graph (DAG) for the entire
+# build, package, commit, and release pipeline. It contains no build logic
+# itself, but instead calls reusable workflows and dedicated scripts to perform
+# each task in a highly parallel and resilient manner.
+#
+# The pipeline is organized into four logical phases:
+#
+#   Phase 0: Pre-Build Checks
+#     - A single, fast job to lint the codebase and install dependencies,
+#       ensuring the repository is in a sane state before starting any
+#       long-running compilations.
+#
+#   Phase 1: Build Binaries (Parallel)
+#     - Two jobs that run in parallel to compile the single-threaded and
+#       multi-threaded WASM cores. These are the most time-consuming steps.
+#
+#   Phase 2: Build JS Wrappers (Parallel)
+#     - Four jobs that run in parallel to build the ESM and UMD variants of
+#       the @ffmpeg/util and @ffmpeg/ffmpeg packages. These depend on the
+#       WASM core builds.
+#
+#   Phase 3: Package Individual Components (Parallel)
+#     - Four jobs that run in parallel, each responsible for taking the raw
+#       artifacts from a specific component (e.g., core-mt) and organizing
+#       them into the final, versioned build structure.
+#
+#   Phase 4: Coalesce and Finalize (Sequential)
+#     - The final jobs that gather all the individually packaged components,
+#       commit them to the repository, and create a formal GitHub Release.
+#
+
 name: Build, Commit, and Release FFmpeg WASM Core
 
 on:
@@ -5,130 +39,221 @@ on:
     branches: [ main ]
   workflow_dispatch:
 
+# Grant write permissions to the contents of the repository, which is
+# required for the final jobs to commit files and create a release.
 permissions:
   contents: write
 
 jobs:
-  build-wasm-st:
-    name: 1. Build Single-Threaded WASM Core
+  # --- Phase 0: Pre-Build Checks ---
+  pre-build-checks:
+    name: 0. Pre-Build Checks
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
-        with:
-          submodules: 'recursive'
-      - name: Cache ccache
-        uses: actions/cache@v4
-        with:
-          path: .ccache
-          key: ${{ runner.os }}-ccache-st-${{ hashFiles('**/Dockerfile', '**/Makefile', 'build/**.sh') }}
-          restore-keys: |
-            ${{ runner.os }}-ccache-st-
-      - name: Setup Docker Buildx
-        uses: docker/setup-buildx-action@v3
-      - name: Cache Docker Layers
-        uses: actions/cache@v4
-        with:
-          path: /tmp/.buildx-cache-st
-          key: ${{ runner.os }}-buildx-st-${{ hashFiles('**/Dockerfile', '**/Makefile', 'build/**.sh') }}
-          restore-keys: |
-            ${{ runner.os }}-buildx-st-
-      - name: Build Single-Thread (ST) Core
-        run: make -j build-st EXTRA_ARGS="--cache-from=type=local,src=/tmp/.buildx-cache-st --cache-to=type=local,dest=/tmp/.buildx-cache-st,mode=max"
-      - name: Upload ST Core Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: core-st-pkg
-          path: packages/core
-
-  build-wasm-mt:
-    name: 2. Build Multi-Threaded WASM Core
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
-        with:
-          submodules: 'recursive'
-      - name: Cache ccache
-        uses: actions/cache@v4
-        with:
-          path: .ccache
-          key: ${{ runner.os }}-ccache-mt-${{ hashFiles('**/Dockerfile', '**/Makefile', 'build/**.sh') }}
-          restore-keys: |
-            ${{ runner.os }}-ccache-mt-
-      - name: Setup Docker Buildx
-        uses: docker/setup-buildx-action@v3
-      - name: Cache Docker Layers
-        uses: actions/cache@v4
-        with:
-          path: /tmp/.buildx-cache-mt
-          key: ${{ runner.os }}-buildx-mt-${{ hashFiles('**/Dockerfile', '**/Makefile', 'build/**.sh') }}
-          restore-keys: |
-            ${{ runner.os }}-buildx-mt-
-      - name: Build Multi-Thread (MT) Core
-        run: make -j build-mt EXTRA_ARGS="--cache-from=type=local,src=/tmp/.buildx-cache-mt --cache-to=type=local,dest=/tmp/.buildx-cache-mt,mode=max"
-      - name: Upload MT Core Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: core-mt-pkg
-          path: packages/core-mt
-
-  build-js:
-    name: 3. Build JavaScript Packages
-    runs-on: ubuntu-latest
-    needs: build-wasm-st
-    steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
-      - name: Download ST Core Artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: core-st-pkg
-          path: packages/core
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '18'
-      - name: Install JS Dependencies
+          cache: 'npm'
+      - name: Install Dependencies
         run: npm install
-      - name: Build JS Packages
-        run: npm run build
-      - name: Upload JS Artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: js-pkgs
-          path: |
-            packages/ffmpeg
-            packages/util
+      - name: Run Linter
+        run: npm run lint
 
-  package-and-commit:
-    name: 4. Package, Commit, and Release
+  # --- Phase 1: Build WASM Cores (Parallel) ---
+  build-wasm-st:
+    name: 1a. Build WASM Core (ST)
+    needs: pre-build-checks # Depends on the initial sanity checks.
+    uses: ./.github/workflows/reusable-build-wasm.yml
+    with:
+      target: build-st
+      cache_suffix: st
+      artifact_name: core-st-pkg
+      artifact_path: packages/core
+
+  build-wasm-mt:
+    name: 1b. Build WASM Core (MT)
+    needs: pre-build-checks
+    uses: ./.github/workflows/reusable-build-wasm.yml
+    with:
+      target: build-mt
+      cache_suffix: mt
+      artifact_name: core-mt-pkg
+      artifact_path: packages/core-mt
+
+  # --- Phase 2: Build JS Wrappers (Parallel) ---
+  build-util-esm:
+    name: 2a. Build util (ESM)
+    needs: pre-build-checks
+    uses: ./.github/workflows/reusable-build-js.yml
+    with:
+      package_name: util
+      format: esm
+      needs_wasm: false # @ffmpeg/util has no dependency on the WASM core.
+      artifact_name: util-esm-dist
+
+  build-util-umd:
+    name: 2b. Build util (UMD)
+    needs: pre-build-checks
+    uses: ./.github/workflows/reusable-build-js.yml
+    with:
+      package_name: util
+      format: umd
+      needs_wasm: false
+      artifact_name: util-umd-dist
+
+  build-ffmpeg-esm:
+    name: 2c. Build ffmpeg (ESM)
+    needs: [build-wasm-st, build-util-esm, build-util-umd] # Depends on the core and util packages.
+    uses: ./.github/workflows/reusable-build-js.yml
+    with:
+      package_name: ffmpeg
+      format: esm
+      needs_wasm: true
+      wasm_artifact_name: core-st-pkg
+      artifact_name: ffmpeg-esm-dist
+
+  build-ffmpeg-umd:
+    name: 2d. Build ffmpeg (UMD)
+    needs: [build-wasm-st, build-util-esm, build-util-umd]
+    uses: ./.github/workflows/reusable-build-js.yml
+    with:
+      package_name: ffmpeg
+      format: umd
+      needs_wasm: true
+      wasm_artifact_name: core-st-pkg
+      artifact_name: ffmpeg-umd-dist
+
+  # --- Phase 3: Package Individual Components (Parallel) ---
+  package-core:
+    name: 3a. Package core
+    needs: build-wasm-st
     runs-on: ubuntu-latest
-    needs: [build-wasm-mt, build-js]
     steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: core-st-pkg
+          path: packages/core
+      - run: chmod +x scripts/*.sh
+      - run: ./scripts/package-core.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: packaged-core
+          path: builds/
+
+  package-core-mt:
+    name: 3b. Package core-mt
+    needs: build-wasm-mt
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: core-mt-pkg
+          path: packages/core-mt
+      - run: chmod +x scripts/*.sh
+      - run: ./scripts/package-core-mt.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: packaged-core-mt
+          path: builds/
+
+  package-util:
+    name: 3c. Package util
+    needs: [build-util-esm, build-util-umd]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: util-esm-dist
+          path: dist/esm
+      - uses: actions/download-artifact@v4
+        with:
+          name: util-umd-dist
+          path: dist/umd
+      - run: chmod +x scripts/*.sh
+      - run: ./scripts/package-util.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: packaged-util
+          path: builds/
+
+  package-ffmpeg:
+    name: 3d. Package ffmpeg
+    needs: [build-ffmpeg-esm, build-ffmpeg-umd]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: ffmpeg-esm-dist
+          path: dist/esm
+      - uses: actions/download-artifact@v4
+        with:
+          name: ffmpeg-umd-dist
+          path: dist/umd
+      - run: chmod +x scripts/*.sh
+      - run: ./scripts/package-ffmpeg.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: packaged-ffmpeg
+          path: builds/
+
+  # --- Phase 4: Coalesce and Finalize (Sequential) ---
+  commit:
+    name: 4. Commit Builds
+    needs: [package-core, package-core-mt, package-util, package-ffmpeg]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
-
-      # Download all artifacts into a clean 'packages' directory
-      - name: Download All Artifacts
-        uses: actions/download-artifact@v4
+      # Download all individually packaged build directories into one place.
+      - uses: actions/download-artifact@v4
         with:
-          path: packages
+          path: builds
+      - run: chmod +x scripts/*.sh
+      # The receipt needs the source JS packages to exist to read their versions.
+      - uses: actions/download-artifact@v4
+        with:
+          name: core-st-pkg
+          path: packages/core
+      - uses: actions/download-artifact@v4
+        with:
+          name: core-mt-pkg
+          path: packages/core-mt
+      - run: ./scripts/create_build_receipt.sh
+      - run: ./scripts/commit_builds.sh
+      # Upload the final, complete builds directory for the release job.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: final-builds
+          path: builds
 
-      - name: Make Scripts Executable
-        run: chmod +x scripts/*.sh
-
-      - name: Generate Build Receipt
-        run: ./scripts/create_build_receipt.sh
-
-      - name: Organize Build Artifacts
-        run: ./scripts/organize_builds.sh
-
-      - name: Commit and Push Builds
-        run: ./scripts/commit_builds.sh
-
+  release:
+    name: 5. Create GitHub Release
+    needs: commit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: final-builds
+          path: builds
+      # The release script also needs the source packages to read their versions.
+      - uses: actions/download-artifact@v4
+        with:
+          name: core-st-pkg
+          path: packages/core
+      - uses: actions/download-artifact@v4
+        with:
+          name: core-mt-pkg
+          path: packages/core-mt
+      - run: chmod +x scripts/*.sh
       - name: Create and Publish Release
         run: ./scripts/create_release.sh
         env:

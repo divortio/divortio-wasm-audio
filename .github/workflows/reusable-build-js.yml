@@ -1,0 +1,93 @@
+#
+# reusable-build-js.yml
+#
+# This is a reusable workflow designed to build a single variant of a
+# JavaScript package (e.g., @ffmpeg/util in ESM format).
+#
+# It is called multiple times by the main 'build.yml' orchestrator workflow,
+# with different inputs to build all required JS package variants in parallel.
+#
+# The workflow performs the following actions:
+#   1. Checks out the repository.
+#   2. Conditionally downloads a pre-compiled WASM core artifact if required
+#      by the JS package (e.g., @ffmpeg/ffmpeg depends on @ffmpeg/core).
+#   3. Sets up a Node.js environment and installs all monorepo dependencies.
+#   4. Makes our custom build scripts executable.
+#   5. Calls the 'build-js-package.sh' script with the correct parameters
+#      to execute the specific tsc/webpack build command.
+#   6. Uploads the resulting 'dist/' directory as a uniquely named artifact.
+#
+
+name: Reusable JS Package Build
+
+# This 'on' block defines the workflow as reusable and declares the inputs.
+on:
+  workflow_call:
+    inputs:
+      # The short name of the package to build (e.g., "util", "ffmpeg").
+      package_name:
+        required: true
+        type: string
+      # The module format to build (e.g., "esm", "umd").
+      format:
+        required: true
+        type: string
+      # A boolean flag indicating if this build depends on a WASM core artifact.
+      needs_wasm:
+        required: true
+        type: boolean
+      # The name of the WASM core artifact to download if 'needs_wasm' is true.
+      wasm_artifact_name:
+        required: false
+        type: string
+      # The name for the final uploaded build artifact (e.g., "util-esm-dist").
+      artifact_name:
+        required: true
+        type: string
+
+jobs:
+  build:
+    name: Build ${{ inputs.package_name }}-${{ inputs.format }}
+    runs-on: ubuntu-latest
+    steps:
+      # Step 1: Check out the source code.
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      # Step 2 (Conditional): Download the required WASM core artifact.
+      # This step only runs if the 'needs_wasm' input is true.
+      - name: Download WASM Core Artifact
+        if: ${{ inputs.needs_wasm }}
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ inputs.wasm_artifact_name }}
+          # The artifact is placed in its correct location within the monorepo structure.
+          path: packages/core
+
+      # Step 3: Set up the Node.js environment.
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          # Cache npm packages to speed up subsequent installs.
+          cache: 'npm'
+
+      # Step 4: Install all monorepo dependencies.
+      - name: Install JS Dependencies
+        run: npm install
+
+      # Step 5: Ensure our custom helper scripts are executable.
+      - name: Make Scripts Executable
+        run: chmod +x scripts/*.sh
+
+      # Step 6: Execute our custom build script with the provided parameters.
+      - name: Build JS Package Variant
+        run: ./scripts/build-js-package.sh ${{ inputs.package_name }} ${{ inputs.format }}
+
+      # Step 7: Upload the resulting 'dist' directory as a uniquely named artifact.
+      # This artifact will be downloaded by a later packaging job.
+      - name: Upload JS Dist Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.artifact_name }}
+          path: packages/${{ inputs.package_name }}/dist
