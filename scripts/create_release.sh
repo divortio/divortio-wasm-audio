@@ -2,21 +2,17 @@
 #
 # create_release.sh
 #
-# This script is responsible for creating a formal GitHub Release after a
-# successful build and commit. It is designed to be run in the final job
-# of the GitHub Actions workflow.
+# This script creates a formal GitHub Release, packaging build artifacts into
+# a flexible set of downloadable zip files. It is designed to be run in the
+# final job of the GitHub Actions workflow after all artifacts are built and
+# organized.
 #
-# The script performs four main functions:
-#   1. Packaging: It creates individual, versioned zip files for each package
-#      (core, core-mt, ffmpeg, util) as well as a single, all-inclusive zip file.
-#   2. Tagging: It generates a unique Git tag for the release, combining the
-#      @ffmpeg/ffmpeg version with a UTC timestamp for uniqueness.
-#   3. Release Notes Generation: It constructs a verbose, multi-line description
-#      for the release, including package versions, artifact paths, and a full
-#      list of enabled filters, encoders, and decoders from the build receipt.
-#   4. Release Creation & Upload: It uses the GitHub CLI (gh) to create the
-#      tag, create the release, and upload all the generated zip files as
-#      downloadable release assets.
+# The script executes the following workflow:
+#   1. Packages builds into individual ESM/UMD zip files and aggregate ESM/UMD zip files.
+#   2. Generates a unique, versioned Git tag for the release.
+#   3. Generates verbose, technical release notes from the build receipt.
+#   4. Uses the GitHub CLI (gh) to create the release and upload all generated
+#      zip files as release assets.
 #
 
 # --- Script Configuration ---
@@ -24,21 +20,21 @@
 # Exit immediately if a command exits with a non-zero status.
 set -euo pipefail
 
+
 # --- Main Execution ---
 
 echo "--- Creating GitHub Release ---"
 
-# Check if the builds directory exists before proceeding.
+# Input Validation: Ensure the 'builds' directory exists.
 if [ ! -d "builds" ]; then
   echo "❌ ERROR: 'builds' directory not found. Cannot create release."
   exit 1
 fi
 
-# The build receipt must exist in the root of a core package.
-# We'll use the single-threaded core to find it.
+# Find the build receipt, which is required for generating release notes.
+# We'll use the single-threaded core package to locate it.
 CORE_VERSION=$(jq -r .version "packages/core/package.json")
 RECEIPT_PATH="builds/core@${CORE_VERSION}/build-receipt.json"
-
 if [ ! -f "$RECEIPT_PATH" ]; then
   echo "❌ ERROR: Build receipt not found at '$RECEIPT_PATH'. Cannot generate release notes."
   exit 1
@@ -47,32 +43,49 @@ fi
 
 # --- 1. Packaging Logic ---
 
-echo "Packaging build artifacts..."
-# Create a temporary directory for our zip files.
+echo "Packaging build artifacts for release..."
+# Create a clean, temporary directory for our final zip assets.
+rm -rf release_assets
 mkdir -p release_assets
+# Create temporary staging directories for the aggregate zips.
+mkdir -p release_assets/all-esm
+mkdir -p release_assets/all-umd
 
-# Find all versioned directories inside 'builds/'.
-# The `-mindepth 1 -maxdepth 1` ensures we only get the top-level package directories.
-find builds -mindepth 1 -maxdepth 1 -type d | while read -r dir; do
-  # Get the directory name (e.g., "core@0.12.10").
-  dirname=$(basename "$dir")
-  # Create a zip file for this individual package.
-  (cd "$dir" && zip -r "../../release_assets/${dirname}.zip" .)
-  echo "  ✔️  Created individual package: ${dirname}.zip"
+# Loop through each versioned package directory in 'builds/' (e.g., 'builds/core@0.12.10').
+find builds -mindepth 1 -maxdepth 1 -type d -name "*@*" | while read -r versioned_dir; do
+  pkg_name_version=$(basename "$versioned_dir") # e.g., "core@0.12.10"
+  pkg_name=$(echo "$pkg_name_version" | cut -d'@' -f1) # e.g., "core"
+
+  # Loop through 'esm' and 'umd' subdirectories.
+  find "$versioned_dir/dist" -mindepth 1 -maxdepth 1 -type d | while read -r module_dir; do
+    module_type=$(basename "$module_dir") # "esm" or "umd"
+
+    # --- Create Individual Zip ---
+    zip_filename="${pkg_name_version}-${module_type}.zip"
+    (cd "$module_dir" && zip -r "../../../../release_assets/${zip_filename}" .)
+    echo "  ✔️  Created individual package: ${zip_filename}"
+
+    # --- Populate Aggregate Directories ---
+    # Copy contents to the correct staging area (e.g., all-esm/core)
+    mkdir -p "release_assets/all-${module_type}/${pkg_name}"
+    cp -a "$module_dir"/* "release_assets/all-${module_type}/${pkg_name}/"
+  done
 done
 
-# Create a single, all-inclusive zip file.
-(cd builds && zip -r "../release_assets/ffmpeg-audio-build-all.zip" .)
-echo "  ✔️  Created all-in-one package: ffmpeg-audio-build-all.zip"
+# --- Create Aggregate Zips ---
+(cd release_assets/all-esm && zip -r ../ffmpeg-audio-build-esm.zip .)
+echo "  ✔️  Created aggregate package: ffmpeg-audio-build-esm.zip"
+(cd release_assets/all-umd && zip -r ../ffmpeg-audio-build-umd.zip .)
+echo "  ✔️  Created aggregate package: ffmpeg-audio-build-umd.zip"
+
+# Clean up the temporary staging directories.
+rm -rf release_assets/all-esm release_assets/all-umd
 
 
 # --- 2. Release Tagging ---
 
-# Read the version from the main ffmpeg package to use in the tag.
 FFMPEG_VERSION=$(jq -r .version "packages/ffmpeg/package.json")
-# Get the current ISO 8601 timestamp for uniqueness.
 DATETIME=$(date -u +"%Y%m%dT%H%M%SZ")
-# Construct the final Git tag.
 TAG="v${FFMPEG_VERSION}-${DATETIME}"
 echo "Generated release tag: ${TAG}"
 
@@ -80,27 +93,16 @@ echo "Generated release tag: ${TAG}"
 # --- 3. Verbose Release Notes ---
 
 echo "Generating verbose release notes..."
-# This logic is reused and enhanced from the commit_builds.sh script.
 CORE_MT_VERSION=$(jq -r .version "packages/core-mt/package.json")
 UTIL_VERSION=$(jq -r .version "packages/util/package.json")
-
-# Use a temporary file to store the multi-line release notes.
 RELEASE_NOTES_FILE=$(mktemp)
 
-# Construct the release body.
-# Using 'cat <<EOF' is a robust way to handle multi-line strings in bash.
 cat <<EOF > "$RELEASE_NOTES_FILE"
 ### Packages Built
 - \`core@${CORE_VERSION}\`
 - \`core-mt@${CORE_MT_VERSION}\`
 - \`ffmpeg@${FFMPEG_VERSION}\`
 - \`util@${UTIL_VERSION}\`
-
-### Build Artifact Paths (in repository)
-- \`builds/core@${CORE_VERSION}\`
-- \`builds/core-mt@${CORE_MT_VERSION}\`
-- \`builds/ffmpeg@${FFMPEG_VERSION}\`
-- \`builds/util@${UTIL_VERSION}\`
 
 ---
 
@@ -126,9 +128,8 @@ EOF
 # --- 4. Release Creation and Upload ---
 
 echo "Creating GitHub Release and uploading assets..."
-
-# Use the GitHub CLI to create the release.
-# The GITHUB_TOKEN environment variable must be set in the workflow.
+# Use the GitHub CLI to create the release and upload all zip files.
+# The GITHUB_TOKEN environment variable must be set in the workflow for authentication.
 gh release create "$TAG" \
   --title "Build: ${TAG}" \
   --notes-file "$RELEASE_NOTES_FILE" \

@@ -5,13 +5,9 @@
 # This script is responsible for committing the newly created build artifacts
 # from the 'builds/' directory back into the Git repository.
 #
-# It dynamically generates a verbose, multi-line commit message that includes:
-#   - A succinct title with an ISO 8601 timestamp and a summary of versions.
-#   - A detailed body listing the full path to each versioned build.
-#   - A complete breakdown of all enabled filters, encoders, and decoders,
-#     extracted from the build-receipt.json.
-#
-# This creates a rich, self-documenting history of each build's specific configuration.
+# It dynamically generates a verbose, multi-line commit message and uses a
+# robust method (piping to 'git commit -F -') to ensure correct formatting
+# in the final Git history.
 #
 
 set -euo pipefail
@@ -33,7 +29,7 @@ fi
 
 echo "Changes detected in 'builds/' directory. Generating verbose commit message..."
 
-# --- Generate Commit Message ---
+# --- Generate Commit Message and Commit ---
 
 # Read version numbers from each package.json
 CORE_VERSION=$(jq -r .version "packages/core/package.json")
@@ -44,50 +40,44 @@ UTIL_VERSION=$(jq -r .version "packages/util/package.json")
 # Get the current ISO 8601 timestamp.
 DATETIME=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 
-# 1. Construct the succinct commit title.
-COMMIT_TITLE="ci: ${DATETIME} Build versions: core@${CORE_VERSION}, core-mt@${CORE_MT_VERSION}, ffmpeg@${FFMPEG_VERSION}, util@${UTIL_VERSION}"
-
-# 2. Construct the commit body.
-# Start with a newline to separate it from the title.
-COMMIT_BODY=$'\\n'
-
-# Add the "Packages Built" section.
-COMMIT_BODY+="CI BUILD:${DATETIME}| \\n"
-COMMIT_BODY+="----------------\\n"
-COMMIT_BODY+="- core@${CORE_VERSION}\\n"
-COMMIT_BODY+="- core-mt@${CORE_MT_VERSION}\\n"
-COMMIT_BODY+="- ffmpeg@${FFMPEG_VERSION}\\n"
-COMMIT_BODY+="- util@${UTIL_VERSION}\\n\\n"
-
-# Add the "Build Artifact Paths" section.
-COMMIT_BODY+="Build Artifact Paths:\\n"
-COMMIT_BODY+="---------------------\\n"
-COMMIT_BODY+="- builds/core@${CORE_VERSION}\\n"
-COMMIT_BODY+="- builds/core-mt@${CORE_MT_VERSION}\\n"
-COMMIT_BODY+="- builds/ffmpeg@${FFMPEG_VERSION}\\n"
-COMMIT_BODY+="- builds/util@${UTIL_VERSION}\\n\\n"
-
-# Add the detailed build receipt information.
-COMMIT_BODY+=$(jq -r '
+# --- REFACTOR: Store the output of the jq command in a variable ---
+# This makes the script cleaner and separates data generation from formatting.
+BUILD_DETAILS=$(jq -r '
   "Build Date: \(.buildDate)\n\n" +
   "Enabled Filters:\n" +
   "----------------\n" +
-  (.enabledFilters | map("- \(. | tostring)") | join("\n")) +
+  (.enabledFilters | join("\n")) +
   "\n\n" +
   "Enabled Encoders:\n" +
   "-----------------\n" +
-  (.enabledEncoders | map("- \(. | tostring)") | join("\n")) +
+  (.enabledEncoders | join("\n")) +
   "\n\n" +
   "Enabled Decoders:\n" +
   "-----------------\n" +
-  (.enabledDecoders | map("- \(. | tostring)") | join("\n"))
+  (.enabledDecoders | join("\n"))
 ' build-receipt.json)
+# --- END REFACTOR ---
 
-# --- Commit and Push ---
+# Use printf to construct the entire multi-line message and pipe it to git commit.
+# 'git commit -F -' reads the full commit message from standard input.
+# This is the most reliable way to handle newlines and special characters.
+printf "%s\n\n%s\n%s\n%s\n%s\n%s\n\n%s\n%s\n%s\n%s\n%s\n%s\n\n%s" \
+  "ci: ${DATETIME} Build versions: core@${CORE_VERSION}, core-mt@${CORE_MT_VERSION}, ffmpeg@${FFMPEG_VERSION}, util@${UTIL_VERSION}" \
+  "Packages Built:" \
+  "----------------" \
+  "- core@${CORE_VERSION}" \
+  "- core-mt@${CORE_MT_VERSION}" \
+  "- ffmpeg@${FFMPEG_VERSION}" \
+  "- util@${UTIL_VERSION}" \
+  "Build Artifact Paths:" \
+  "---------------------" \
+  "- builds/core@${CORE_VERSION}" \
+  "- builds/core-mt@${CORE_MT_VERSION}" \
+  "- builds/ffmpeg@${FFMPEG_VERSION}" \
+  "- builds/util@${UTIL_VERSION}" \
+  "${BUILD_DETAILS}" | git commit -F - # Use the new variable here
 
-# Use the -m flag twice to create a multi-line commit message.
-# The first -m is the title, the second is the body.
-git commit -m "$COMMIT_TITLE" -m "$COMMIT_BODY"
+# Push the newly created commit.
 git push
 
-echo "✅ New builds successfully committed with a verbose message."
+echo "✅ New builds successfully committed with a correctly formatted message."
