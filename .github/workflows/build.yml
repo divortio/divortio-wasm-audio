@@ -213,7 +213,6 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           name: final-builds
-          path: builds
       # The release script also needs the source packages to read their versions.
       - uses: actions/download-artifact@v4
         with:
