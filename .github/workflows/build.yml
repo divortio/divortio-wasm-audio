@@ -12,7 +12,7 @@ permissions:
   contents: write
 
 jobs:
-  # ... (pre-build-checks, build-wasm-*, and build-js-* jobs remain the same and are correct)
+  # --- Phase 0, 1, 2, 3 are correct and remain unchanged ---
   pre-build-checks:
     name: 0. Pre-Build Checks
     runs-on: ubuntu-latest
@@ -91,18 +91,15 @@ jobs:
       wasm_artifact_name: core-st-pkg
       artifact_name: ffmpeg-umd-dist
 
-  # --- Phase 3: Package Individual Components (Parallel) ---
   package-core:
     name: 3a. Package core
     needs: build-wasm-st
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      # --- THIS STEP IS CORRECTED ---
       - uses: actions/download-artifact@v4
         with:
           name: core-st-pkg
-          # NO PATH: Download to the root of the workspace to preserve the structure.
       - run: chmod +x scripts/*.sh
       - run: ./scripts/package-core.sh
       - uses: actions/upload-artifact@v4
@@ -116,11 +113,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      # --- THIS STEP IS CORRECTED ---
       - uses: actions/download-artifact@v4
         with:
           name: core-mt-pkg
-          # NO PATH: Download to the root of the workspace.
       - run: chmod +x scripts/*.sh
       - run: ./scripts/package-core-mt.sh
       - uses: actions/upload-artifact@v4
@@ -179,22 +174,35 @@ jobs:
       - uses: actions/checkout@v4
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
-      - uses: actions/download-artifact@v4
-        with:
-          path: builds
+
+      # --- THIS IS THE CRITICAL FIX ---
+      # Download all artifacts without a 'path'. This extracts their contents
+      # into the workspace root, correctly merging all the 'builds' directories.
+      - name: Download All Packaged Artifacts
+        uses: actions/download-artifact@v4
+
+      # For absolute certainty, list the directory structure after download.
+      - name: Verify Directory Structure
+        run: ls -R
+
       - run: chmod +x scripts/*.sh
-      # The commit script needs the source packages to read their versions.
+
+      # The commit and release scripts also need the source packages to read versions.
+      # We get them from the original build artifacts, which we also download.
       - uses: actions/download-artifact@v4
         with:
           name: core-st-pkg
       - uses: actions/download-artifact@v4
         with:
           name: core-mt-pkg
+
       - run: ./scripts/commit_builds.sh
-      - uses: actions/upload-artifact@v4
+
+      - name: Upload Final Builds for Release Job
+        uses: actions/upload-artifact@v4
         with:
           name: final-builds
-          path: builds
+          path: builds/
 
   release:
     name: 5. Create GitHub Release
@@ -202,10 +210,18 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
+
+      # --- THIS IS THE CRITICAL FIX ---
+      # Download the final 'builds' directory, also without a path.
+      - name: Download Final Builds
+        uses: actions/download-artifact@v4
         with:
           name: final-builds
-          path: builds
+
+      # For absolute certainty, list the directory structure after download.
+      - name: Verify Directory Structure
+        run: ls -R
+
       # The release script also needs the source packages to read their versions.
       - uses: actions/download-artifact@v4
         with:
@@ -213,6 +229,7 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           name: core-mt-pkg
+
       - run: chmod +x scripts/*.sh
       - name: Create and Publish Release
         run: ./scripts/create_release.sh
