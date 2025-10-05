@@ -1,7 +1,7 @@
 #
 # build.yml - The Main Build Orchestrator
 #
-name: Build, Commit, and Release FFmpeg WASM Core
+name: Build and Release FFmpeg WASM Core
 
 on:
   push:
@@ -106,11 +106,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      # --- THIS STEP IS CORRECTED ---
       - uses: actions/download-artifact@v4
         with:
           name: core-st-pkg
-          # NO PATH: This is the fix. It extracts to the root, creating the correct path.
       - run: chmod +x scripts/*.sh
       - run: ./scripts/package-core.sh
       - uses: actions/upload-artifact@v4
@@ -124,11 +122,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      # --- THIS STEP IS CORRECTED ---
       - uses: actions/download-artifact@v4
         with:
           name: core-mt-pkg
-          # NO PATH: This is the fix.
       - run: chmod +x scripts/*.sh
       - run: ./scripts/package-core-mt.sh
       - uses: actions/upload-artifact@v4
@@ -179,41 +175,29 @@ jobs:
           path: builds/
 
   # --- Phase 4: Coalesce and Finalize (Sequential) ---
-  commit:
-    name: 4. Commit Builds
+  release:
+    name: 4. Create GitHub Release
     needs: [package-core, package-core-mt, package-util, package-ffmpeg]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
       - uses: actions/download-artifact@v4
         with:
-          path: builds
-      - run: chmod +x scripts/*.sh
-      # The commit script needs the source packages to read their versions.
+          name: packaged-core
+          path: builds/packaged-core
       - uses: actions/download-artifact@v4
         with:
-          name: core-st-pkg
+          name: packaged-core-mt
+          path: builds/packaged-core-mt
       - uses: actions/download-artifact@v4
         with:
-          name: core-mt-pkg
-      - run: ./scripts/commit_builds.sh
-      - uses: actions/upload-artifact@v4
-        with:
-          name: final-builds
-          path: builds
-
-  release:
-    name: 5. Create GitHub Release
-    needs: commit
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
+          name: packaged-util
+          path: builds/packaged-util
       - uses: actions/download-artifact@v4
         with:
-          name: final-builds
-      # The release script also needs the source packages to read their versions.
+          name: packaged-ffmpeg
+          path: builds/packaged-ffmpeg
+      # The release script needs the source packages to read their versions.
       - uses: actions/download-artifact@v4
         with:
           name: core-st-pkg

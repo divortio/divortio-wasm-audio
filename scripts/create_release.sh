@@ -4,6 +4,8 @@
 #
 # This script creates a formal GitHub Release, packaging build artifacts into
 # flexible zip files and generating clean release notes.
+# It has been updated to handle nested artifact directories and create
+# a unique tag for the release.
 #
 
 set -euo pipefail
@@ -17,12 +19,21 @@ if [ ! -d "builds" ]; then
   exit 1
 fi
 
+# Validate that the source package.json files are available to read versions.
+if [ ! -f "packages/core/package.json" ] || [ ! -f "packages/core-mt/package.json" ] || [ ! -f "packages/ffmpeg/package.json" ] || [ ! -f "packages/util/package.json" ]; then
+  echo "❌ ERROR: One or more source package.json files are missing. Cannot determine versions."
+  echo "Listing contents of 'packages' directory:"
+  ls -R packages
+  exit 1
+fi
+
 CORE_VERSION=$(jq -r .version "packages/core/package.json")
 CORE_MT_VERSION=$(jq -r .version "packages/core-mt/package.json")
 FFMPEG_VERSION=$(jq -r .version "packages/ffmpeg/package.json")
 UTIL_VERSION=$(jq -r .version "packages/util/package.json")
 DATETIME=$(date -u +"%Y%m%dT%H%M%SZ")
-TAG="v${FFMPEG_VERSION}-${DATETIME}"
+# Use a clean, datetime-based tag for the monolithic release.
+TAG="release-${DATETIME}"
 
 # --- Packaging Logic ---
 
@@ -32,7 +43,10 @@ mkdir -p release_assets
 mkdir -p release_assets/all-esm
 mkdir -p release_assets/all-umd
 
-find builds -mindepth 1 -maxdepth 1 -type d -name "*@*" | while read -r versioned_dir; do
+# --- THIS IS THE CRITICAL FIX ---
+# The 'find' command now searches the entire 'builds' directory tree to locate
+# the versioned directories, regardless of how they are nested.
+find builds -type d -name "*@*" | while read -r versioned_dir; do
   pkg_name_version=$(basename "$versioned_dir")
   pkg_name=$(echo "$pkg_name_version" | cut -d'@' -f1)
   find "$versioned_dir/dist" -mindepth 1 -maxdepth 1 -type d | while read -r module_dir; do
@@ -67,7 +81,7 @@ EOF
 
 echo "Creating GitHub Release with tag: ${TAG}"
 gh release create "$TAG" \
-  --title "Build: ${TAG}" \
+  --title "Build: ${DATETIME}" \
   --notes-file "$RELEASE_NOTES_FILE" \
   release_assets/*.zip
 
