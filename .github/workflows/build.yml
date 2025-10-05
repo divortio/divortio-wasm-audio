@@ -12,7 +12,7 @@ permissions:
   contents: write
 
 jobs:
-  # --- Phase 0, 1, and 2 remain the same. They are proven to be working correctly. ---
+  # --- Phase 0: Pre-Build Checks ---
   pre-build-checks:
     name: 0. Pre-Build Checks
     runs-on: ubuntu-latest
@@ -29,6 +29,7 @@ jobs:
       - name: Run Linter on Safe Packages
         run: npm run lint --workspace=@ffmpeg/util
 
+  # --- Phase 1: Build Binaries (Parallel) ---
   build-wasm-st:
     name: 1a. Build WASM Core (ST)
     needs: pre-build-checks
@@ -49,6 +50,7 @@ jobs:
       artifact_name: core-mt-pkg
       artifact_path: packages/core-mt
 
+  # --- Phase 2: Build JS Wrappers (Parallel) ---
   build-util-esm:
     name: 2a. Build util (ESM)
     needs: pre-build-checks
@@ -108,20 +110,15 @@ jobs:
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      # --- THIS IS THE CRITICAL FIX ---
-      # Download all raw build artifacts into a single, clean environment.
-      # The directory structure will be correct and predictable.
       - name: Download All Build Artifacts
         uses: actions/download-artifact@v4
 
-      # For absolute certainty, list the directory structure after download.
       - name: Verify Directory Structure
         run: ls -R
 
       - name: Make Scripts Executable
         run: chmod +x scripts/*.sh
 
-      # Now, run all packaging and release scripts sequentially in this stable environment.
       - name: Package All Components
         run: |
           ./scripts/package-core.sh
