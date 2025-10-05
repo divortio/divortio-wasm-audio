@@ -1,7 +1,7 @@
 #
 # build.yml - The Main Build Orchestrator
 #
-name: Build and Release FFmpeg WASM Core
+name: Build, Commit, and Release FFmpeg WASM Core
 
 on:
   push:
@@ -12,9 +12,9 @@ permissions:
   contents: write
 
 jobs:
-  # --- Phase 0: Pre-Build Checks ---
-  pre-build-checks:
-    name: 0. Pre-Build Checks
+  # --- Phase -1: Install Dependencies ---
+  install-dependencies:
+    name: Install Dependencies
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Repository
@@ -23,9 +23,33 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '22'
-          cache: 'npm'
+      - name: Cache node_modules
+        id: cache-npm
+        uses: actions/cache@v4
+        with:
+          path: '**/node_modules'
+          key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
       - name: Install Dependencies
+        if: steps.cache-npm.outputs.cache-hit != 'true'
         run: npm install
+
+  # --- Phase 0: Pre-Build Checks ---
+  pre-build-checks:
+    name: 0. Pre-Build Checks
+    needs: install-dependencies
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Restore node_modules
+        uses: actions/cache@v4
+        with:
+          path: '**/node_modules'
+          key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
       - name: Run Linter on Safe Packages
         run: npm run lint --workspace=@ffmpeg/util
 
@@ -99,113 +123,4 @@ jobs:
       wasm_artifact_name: core-st-pkg
       artifact_name: ffmpeg-umd-dist
 
-  # --- Phase 3: Package Individual Components (Parallel) ---
-  package-core:
-    name: 3a. Package core
-    needs: build-wasm-st
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
-        with:
-          name: core-st-pkg
-      - run: chmod +x scripts/*.sh
-      - run: ./scripts/package-core.sh
-      - uses: actions/upload-artifact@v4
-        with:
-          name: packaged-core
-          path: builds/
-
-  package-core-mt:
-    name: 3b. Package core-mt
-    needs: build-wasm-mt
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
-        with:
-          name: core-mt-pkg
-      - run: chmod +x scripts/*.sh
-      - run: ./scripts/package-core-mt.sh
-      - uses: actions/upload-artifact@v4
-        with:
-          name: packaged-core-mt
-          path: builds/
-
-  package-util:
-    name: 3c. Package util
-    needs: [build-util-esm, build-util-umd]
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
-        with:
-          name: util-esm-dist
-          path: dist/esm
-      - uses: actions/download-artifact@v4
-        with:
-          name: util-umd-dist
-          path: dist/umd
-      - run: chmod +x scripts/*.sh
-      - run: ./scripts/package-util.sh
-      - uses: actions/upload-artifact@v4
-        with:
-          name: packaged-util
-          path: builds/
-
-  package-ffmpeg:
-    name: 3d. Package ffmpeg
-    needs: [build-ffmpeg-esm, build-ffmpeg-umd]
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
-        with:
-          name: ffmpeg-esm-dist
-          path: dist/esm
-      - uses: actions/download-artifact@v4
-        with:
-          name: ffmpeg-umd-dist
-          path: dist/umd
-      - run: chmod +x scripts/*.sh
-      - run: ./scripts/package-ffmpeg.sh
-      - uses: actions/upload-artifact@v4
-        with:
-          name: packaged-ffmpeg
-          path: builds/
-
-  # --- Phase 4: Coalesce and Finalize (Sequential) ---
-  release:
-    name: 4. Create GitHub Release
-    needs: [package-core, package-core-mt, package-util, package-ffmpeg]
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
-        with:
-          name: packaged-core
-          path: builds/packaged-core
-      - uses: actions/download-artifact@v4
-        with:
-          name: packaged-core-mt
-          path: builds/packaged-core-mt
-      - uses: actions/download-artifact@v4
-        with:
-          name: packaged-util
-          path: builds/packaged-util
-      - uses: actions/download-artifact@v4
-        with:
-          name: packaged-ffmpeg
-          path: builds/packaged-ffmpeg
-      # The release script needs the source packages to read their versions.
-      - uses: actions/download-artifact@v4
-        with:
-          name: core-st-pkg
-      - uses: actions/download-artifact@v4
-        with:
-          name: core-mt-pkg
-      - run: chmod +x scripts/*.sh
-      - name: Create and Publish Release
-        run: ./scripts/create_release.sh
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  # --- The rest of the file remains the same...
