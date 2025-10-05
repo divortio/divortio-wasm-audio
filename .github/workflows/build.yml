@@ -98,8 +98,10 @@ jobs:
       needs_wasm: true
       wasm_artifact_name: core-st-pkg
       artifact_name: ffmpeg-umd-dist
+
+  # --- Phase 3: Finalize (Package, Commit, and Release) ---
   finalize:
-    name: 3. Finalize Package, Commit, and Release
+    name: 3. Finalize - Package, Commit, and Release
     runs-on: ubuntu-latest
     needs:
       - build-wasm-st
@@ -131,7 +133,7 @@ jobs:
           ./scripts/package-ffmpeg.sh
 
       - name: Commit and Push Builds
-        run: ./scripts/commit_bills.sh
+        run: ./scripts/commit_builds.sh
 
       - name: Create and Publish Release
         run: ./scripts/create_release.sh
