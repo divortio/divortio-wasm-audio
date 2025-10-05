@@ -12,7 +12,7 @@ permissions:
   contents: write
 
 jobs:
-  # --- Phase 0, 1, 2, 3 are correct and remain unchanged ---
+  # --- Phase 0, 1, and 2 remain the same. They are proven to be working correctly. ---
   pre-build-checks:
     name: 0. Pre-Build Checks
     runs-on: ubuntu-latest
@@ -91,146 +91,47 @@ jobs:
       wasm_artifact_name: core-st-pkg
       artifact_name: ffmpeg-umd-dist
 
-  package-core:
-    name: 3a. Package core
-    needs: build-wasm-st
+  # --- Phase 3: Finalize (Package, Commit, and Release) ---
+  finalize:
+    name: 3. Finalize: Package, Commit, and Release
     runs-on: ubuntu-latest
+    needs:
+      - build-wasm-st
+      - build-wasm-mt
+      - build-util-esm
+      - build-util-umd
+      - build-ffmpeg-esm
+      - build-ffmpeg-umd
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
-        with:
-          name: core-st-pkg
-      - run: chmod +x scripts/*.sh
-      - run: ./scripts/package-core.sh
-      - uses: actions/upload-artifact@v4
-        with:
-          name: packaged-core
-          path: builds/
-
-  package-core-mt:
-    name: 3b. Package core-mt
-    needs: build-wasm-mt
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
-        with:
-          name: core-mt-pkg
-      - run: chmod +x scripts/*.sh
-      - run: ./scripts/package-core-mt.sh
-      - uses: actions/upload-artifact@v4
-        with:
-          name: packaged-core-mt
-          path: builds/
-
-  package-util:
-    name: 3c. Package util
-    needs: [build-util-esm, build-util-umd]
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
-        with:
-          name: util-esm-dist
-          path: dist/esm
-      - uses: actions/download-artifact@v4
-        with:
-          name: util-umd-dist
-          path: dist/umd
-      - run: chmod +x scripts/*.sh
-      - run: ./scripts/package-util.sh
-      - uses: actions/upload-artifact@v4
-        with:
-          name: packaged-util
-          path: builds/
-
-  package-ffmpeg:
-    name: 3d. Package ffmpeg
-    needs: [build-ffmpeg-esm, build-ffmpeg-umd]
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
-        with:
-          name: ffmpeg-esm-dist
-          path: dist/esm
-      - uses: actions/download-artifact@v4
-        with:
-          name: ffmpeg-umd-dist
-          path: dist/umd
-      - run: chmod +x scripts/*.sh
-      - run: ./scripts/package-ffmpeg.sh
-      - uses: actions/upload-artifact@v4
-        with:
-          name: packaged-ffmpeg
-          path: builds/
-
-  # --- Phase 4: Coalesce and Finalize (Sequential) ---
-  commit:
-    name: 4. Commit Builds
-    needs: [package-core, package-core-mt, package-util, package-ffmpeg]
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
+      - name: Checkout Repository
+        uses: actions/checkout@v4
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
 
       # --- THIS IS THE CRITICAL FIX ---
-      # Download all artifacts without a 'path'. This extracts their contents
-      # into the workspace root, correctly merging all the 'builds' directories.
-      - name: Download All Packaged Artifacts
+      # Download all raw build artifacts into a single, clean environment.
+      # The directory structure will be correct and predictable.
+      - name: Download All Build Artifacts
         uses: actions/download-artifact@v4
 
       # For absolute certainty, list the directory structure after download.
       - name: Verify Directory Structure
         run: ls -R
 
-      - run: chmod +x scripts/*.sh
+      - name: Make Scripts Executable
+        run: chmod +x scripts/*.sh
 
-      # The commit and release scripts also need the source packages to read versions.
-      # We get them from the original build artifacts, which we also download.
-      - uses: actions/download-artifact@v4
-        with:
-          name: core-st-pkg
-      - uses: actions/download-artifact@v4
-        with:
-          name: core-mt-pkg
+      # Now, run all packaging and release scripts sequentially in this stable environment.
+      - name: Package All Components
+        run: |
+          ./scripts/package-core.sh
+          ./scripts/package-core-mt.sh
+          ./scripts/package-util.sh
+          ./scripts/package-ffmpeg.sh
 
-      - run: ./scripts/commit_builds.sh
+      - name: Commit and Push Builds
+        run: ./scripts/commit_builds.sh
 
-      - name: Upload Final Builds for Release Job
-        uses: actions/upload-artifact@v4
-        with:
-          name: final-builds
-          path: builds/
-
-  release:
-    name: 5. Create GitHub Release
-    needs: commit
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      # --- THIS IS THE CRITICAL FIX ---
-      # Download the final 'builds' directory, also without a path.
-      - name: Download Final Builds
-        uses: actions/download-artifact@v4
-        with:
-          name: final-builds
-
-      # For absolute certainty, list the directory structure after download.
-      - name: Verify Directory Structure
-        run: ls -R
-
-      # The release script also needs the source packages to read their versions.
-      - uses: actions/download-artifact@v4
-        with:
-          name: core-st-pkg
-      - uses: actions/download-artifact@v4
-        with:
-          name: core-mt-pkg
-
-      - run: chmod +x scripts/*.sh
       - name: Create and Publish Release
         run: ./scripts/create_release.sh
         env:
