@@ -12,7 +12,7 @@ permissions:
   contents: write
 
 jobs:
-  # ... (pre-build-checks, all build-wasm-* and build-js-* jobs remain the same)
+  # ... (pre-build-checks, build-wasm-*, and build-js-* jobs remain the same and are correct)
   pre-build-checks:
     name: 0. Pre-Build Checks
     runs-on: ubuntu-latest
@@ -91,16 +91,18 @@ jobs:
       wasm_artifact_name: core-st-pkg
       artifact_name: ffmpeg-umd-dist
 
+  # --- Phase 3: Package Individual Components (Parallel) ---
   package-core:
     name: 3a. Package core
     needs: build-wasm-st
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      # --- THIS STEP IS CORRECTED ---
       - uses: actions/download-artifact@v4
         with:
           name: core-st-pkg
-          path: packages/core
+          # NO PATH: Download to the root of the workspace to preserve the structure.
       - run: chmod +x scripts/*.sh
       - run: ./scripts/package-core.sh
       - uses: actions/upload-artifact@v4
@@ -114,10 +116,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      # --- THIS STEP IS CORRECTED ---
       - uses: actions/download-artifact@v4
         with:
           name: core-mt-pkg
-          path: packages/core-mt
+          # NO PATH: Download to the root of the workspace.
       - run: chmod +x scripts/*.sh
       - run: ./scripts/package-core-mt.sh
       - uses: actions/upload-artifact@v4
@@ -184,11 +187,9 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           name: core-st-pkg
-          path: packages/core
       - uses: actions/download-artifact@v4
         with:
           name: core-mt-pkg
-          path: packages/core-mt
       - run: ./scripts/commit_builds.sh
       - uses: actions/upload-artifact@v4
         with:
@@ -209,11 +210,9 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           name: core-st-pkg
-          path: packages/core
       - uses: actions/download-artifact@v4
         with:
           name: core-mt-pkg
-          path: packages/core-mt
       - run: chmod +x scripts/*.sh
       - name: Create and Publish Release
         run: ./scripts/create_release.sh
