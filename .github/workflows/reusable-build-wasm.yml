@@ -1,16 +1,27 @@
 #
-# reusable-build-js.yml - Reusable Workflow to Build JS Packages
+# reusable-build-wasm.yml - Reusable Workflow to Build WASM Core
 #
-name: Reusable Build JS
+name: Reusable Build WASM Core
 
 on:
   workflow_call:
     inputs:
-      wasm_artifact_name_st:
+      # REMOVED: The 'target' input which was causing the semantic error.
+      cache_suffix:
         required: true
         type: string
-      wasm_artifact_name_mt:
+      artifact_name:
         required: true
+        type: string
+      artifact_path:
+        required: true
+        type: string
+      # ADDED: Inputs for Docker build arguments to control ST/MT builds.
+      ffmpeg_st:
+        required: false
+        type: string
+      ffmpeg_mt:
+        required: false
         type: string
 
 jobs:
@@ -20,50 +31,34 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '22'
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
 
-      # FIX: Add caching for node_modules to speed up dependency installation.
-      - name: Cache node_modules
-        id: cache-npm
-        uses: actions/cache@v4
-        with:
-          path: '**/node_modules'
-          key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
-          restore-keys: |
-            ${{ runner.os }}-node-
+      - name: Set up Docker Buildx
+        id: buildx
+        uses: docker/setup-buildx-action@v3
 
-      # FIX: Only run 'npm install' if the cache was not restored.
-      - name: Install Dependencies
-        if: steps.cache-npm.outputs.cache-hit != 'true'
-        run: npm install
-
-      - name: Download WASM Artifacts
-        uses: actions/download-artifact@v4
+      - name: Build WASM Core with Native GHA Cache
+        uses: docker/build-push-action@v5
         with:
-          name: ${{ inputs.wasm_artifact_name_st }}
-          path: packages/core
-      - uses: actions/download-artifact@v4
-        with:
-          name: ${{ inputs.wasm_artifact_name_mt }}
-          path: packages/core-mt
+          context: .
+          # FIX: Hardcode the 'target' to the correct Dockerfile stage name.
+          target: ffmpeg-wasm-builder
+          # FIX: Pass build arguments to the Dockerfile.
+          build-args: |
+            FFMPEG_ST=${{ inputs.ffmpeg_st }}
+            FFMPEG_MT=${{ inputs.ffmpeg_mt }}
+          outputs: type=local,dest=${{ github.workspace }}/${{ inputs.artifact_path }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
-      - name: Build JS Packages
+      - name: Create Build Receipt
         run: |
-          chmod +x scripts/build-js-package.sh
-          # Build util (ESM and UMD)
-          ./scripts/build-js-package.sh util esm
-          ./scripts/build-js-package.sh util umd
-          # Build ffmpeg (ESM and UMD)
-          ./scripts/build-js-package.sh ffmpeg esm
-          ./scripts/build-js-package.sh ffmpeg umd
+          chmod +x scripts/create_build_receipt.sh
+          ./scripts/create_build_receipt.sh ${{ inputs.artifact_path }}
 
-      - name: Upload All JS Dist Artifacts
+      - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: js-dists
-          path: |
-            packages/util/dist
-            packages/ffmpeg/dist
+          name: ${{ inputs.artifact_name }}
+          path: ${{ inputs.artifact_path }}

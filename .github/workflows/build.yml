@@ -59,7 +59,8 @@ jobs:
     needs: pre-build-checks
     uses: ./.github/workflows/reusable-build-wasm.yml
     with:
-      target: build-st
+      # FIX: Pass 'ffmpeg_st' as a build-arg instead of the incorrect 'target'.
+      ffmpeg_st: 'yes'
       cache_suffix: st
       artifact_name: core-st-pkg
       artifact_path: packages/core
@@ -69,7 +70,8 @@ jobs:
     needs: pre-build-checks
     uses: ./.github/workflows/reusable-build-wasm.yml
     with:
-      target: build-mt
+      # FIX: Pass 'ffmpeg_mt' as a build-arg instead of the incorrect 'target'.
+      ffmpeg_mt: 'yes'
       cache_suffix: mt
       artifact_name: core-mt-pkg
       artifact_path: packages/core-mt
@@ -77,9 +79,8 @@ jobs:
   # --- Phase 2: Build JS Wrappers ---
   build-js-wrappers:
     name: 2. Build JS Wrappers
-    needs: [install-dependencies, build-wasm-st]
+    needs: [install-dependencies, build-wasm-st, build-wasm-mt]
     uses: ./.github/workflows/reusable-build-js.yml
-    # FIX: Add the 'with' block to provide the required inputs.
     with:
       wasm_artifact_name_st: core-st-pkg
       wasm_artifact_name_mt: core-mt-pkg
@@ -140,12 +141,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      # Download all packaged .zip files into one directory
       - uses: actions/download-artifact@v4
         with:
           name: packaged-builds
           path: builds/
-      # Download source packages needed to read version numbers
+      # Download source packages needed to read version numbers for the release notes
       - uses: actions/download-artifact@v4
         with:
           name: core-st-pkg
