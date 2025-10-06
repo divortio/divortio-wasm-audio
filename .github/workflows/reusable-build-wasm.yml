@@ -52,10 +52,13 @@ jobs:
             ${{ runner.os }}-buildx-${{ inputs.cache_suffix }}-
 
       # --- THIS IS THE CRITICAL FIX ---
-      # The EXTRA_ARGS are now on a single line to prevent newline characters
-      # from breaking the command parsing within the Makefile.
+      # EXTRA_ARGS is now passed as an environment variable to the step.
+      # `make` inherits this variable, and its value is expanded by the shell
+      # inside the Makefile as a sequence of arguments, not a single string.
       - name: Build WASM Core
-        run: make -j ${{ inputs.target }} EXTRA_ARGS="--mount=type=bind,source=$(pwd)/.ccache,target=/root/.ccache --cache-from=type=local,src=/tmp/.buildx-cache-${{ inputs.cache_suffix }} --cache-to=type=local,dest=/tmp/.buildx-cache-${{ inputs.cache_suffix }},mode=max"
+        env:
+          EXTRA_ARGS: "--mount=type=bind,source=$(pwd)/.ccache,target=/root/.ccache --cache-from=type=local,src=/tmp/.buildx-cache-${{ inputs.cache_suffix }} --cache-to=type=local,dest=/tmp/.buildx-cache-${{ inputs.cache_suffix }},mode=max"
+        run: make -j ${{ inputs.target }}
 
       - name: Upload WASM Core Artifact
         uses: actions/upload-artifact@v4
