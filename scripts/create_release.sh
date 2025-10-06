@@ -62,7 +62,7 @@ UTIL_VERSION=$(jq -r .version "packages/util/package.json")
 # Get the current ISO 8601 timestamp.
 DATETIME=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 
-inal Git tag.
+
 TAG="v${FFMPEG_VERSION}-${DATETIME}"
 echo "Generated release tag: ${TAG}"
 
