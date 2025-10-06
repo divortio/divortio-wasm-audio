@@ -25,11 +25,20 @@ jobs:
         with:
           node-version: '22'
 
-      - name: Restore node_modules
+      # Caching for node_modules to speed up dependency installation.
+      - name: Cache node_modules
+        id: cache-npm
         uses: actions/cache@v4
         with:
           path: '**/node_modules'
           key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-node-
+
+      # Only run 'npm install' if the cache was not restored.
+      - name: Install Dependencies
+        if: steps.cache-npm.outputs.cache-hit != 'true'
+        run: npm install
 
       - name: Download WASM Artifacts
         uses: actions/download-artifact@v4

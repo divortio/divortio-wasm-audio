@@ -6,7 +6,6 @@ name: Reusable Build WASM Core
 on:
   workflow_call:
     inputs:
-      # REMOVED: The 'target' input which was causing the semantic error.
       cache_suffix:
         required: true
         type: string
@@ -16,7 +15,6 @@ on:
       artifact_path:
         required: true
         type: string
-      # ADDED: Inputs for Docker build arguments to control ST/MT builds.
       ffmpeg_st:
         required: false
         type: string
@@ -42,9 +40,7 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: .
-          # FIX: Hardcode the 'target' to the correct Dockerfile stage name.
           target: ffmpeg-wasm-builder
-          # FIX: Pass build arguments to the Dockerfile.
           build-args: |
             FFMPEG_ST=${{ inputs.ffmpeg_st }}
             FFMPEG_MT=${{ inputs.ffmpeg_mt }}
@@ -52,10 +48,7 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Create Build Receipt
-        run: |
-          chmod +x scripts/create_build_receipt.sh
-          ./scripts/create_build_receipt.sh ${{ inputs.artifact_path }}
+      # REMOVED: The "Create Build Receipt" step has been deleted.
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
