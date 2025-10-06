@@ -1,80 +1,60 @@
 #
-# reusable-build-js.yml
+# reusable-build-js.yml - Reusable Workflow to Build JS Packages
 #
-name: Reusable JS Package Build
+name: Reusable Build JS
 
 on:
   workflow_call:
     inputs:
-      package_name:
+      wasm_artifact_name_st:
         required: true
         type: string
-      format:
+      wasm_artifact_name_mt:
         required: true
-        type: string
-      needs_wasm:
-        required: true
-        type: boolean
-      wasm_artifact_name:
-        required: false
-        type: string
-      artifact_name:
-        required: true
-        type: string
-      # --- NEW INPUTS TO HANDLE JS DEPENDENCIES ---
-      needs_js_artifact:
-        required: false
-        type: boolean
-        default: false
-      js_artifact_name:
-        required: false
-        type: string
-      js_artifact_path:
-        required: false
         type: string
 
 jobs:
   build:
-    name: Build ${{ inputs.package_name }}-${{ inputs.format }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Download WASM Core Artifact
-        if: ${{ inputs.needs_wasm }}
-        uses: actions/download-artifact@v4
-        with:
-          name: ${{ inputs.wasm_artifact_name }}
-          path: packages/core
-
-      # --- THIS IS THE CRITICAL FIX ---
-      # Download the prerequisite JS artifact (e.g., ESM build) if needed.
-      - name: Download JS Dependency Artifact
-        if: ${{ inputs.needs_js_artifact }}
-        uses: actions/download-artifact@v4
-        with:
-          name: ${{ inputs.js_artifact_name }}
-          path: ${{ inputs.js_artifact_path }}
-
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '22'
+
       - name: Restore node_modules
         uses: actions/cache@v4
         with:
           path: '**/node_modules'
           key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
 
-      - name: Make Scripts Executable
-        run: chmod +x scripts/*.sh
+      - name: Download WASM Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ inputs.wasm_artifact_name_st }}
+          path: packages/core
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ inputs.wasm_artifact_name_mt }}
+          path: packages/core-mt
 
-      - name: Build JS Package Variant
-        run: ./scripts/build-js-package.sh ${{ inputs.package_name }} ${{ inputs.format }}
+      - name: Build JS Packages
+        run: |
+          chmod +x scripts/build-js-package.sh
+          # Build util (ESM and UMD)
+          ./scripts/build-js-package.sh util esm
+          ./scripts/build-js-package.sh util umd
+          # Build ffmpeg (ESM and UMD)
+          ./scripts/build-js-package.sh ffmpeg esm
+          ./scripts/build-js-package.sh ffmpeg umd
 
-      - name: Upload JS Dist Artifact
+      - name: Upload All JS Dist Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ inputs.artifact_name }}
-          path: packages/${{ inputs.package_name }}/dist/${{ inputs.format }}/
+          name: js-dists
+          path: |
+            packages/util/dist
+            packages/ffmpeg/dist

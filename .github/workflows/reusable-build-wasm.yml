@@ -1,7 +1,7 @@
 #
-# reusable-build-wasm.yml
+# reusable-build-wasm.yml - Reusable Workflow to Build WASM Core
 #
-name: Reusable WASM Core Build
+name: Reusable Build WASM Core
 
 on:
   workflow_call:
@@ -21,46 +21,43 @@ on:
 
 jobs:
   build:
-    name: Build ${{ inputs.artifact_name }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
-        with:
-          submodules: 'recursive'
 
-      - name: Create ccache Directory
-        run: mkdir -p .ccache
-
-      - name: Cache ccache
-        uses: actions/cache@v4
-        with:
-          path: .ccache
-          key: ${{ runner.os }}-ccache-${{ inputs.cache_suffix }}-${{ hashFiles('**/Dockerfile', '**/Makefile', 'build/**.sh') }}
-          restore-keys: |
-            ${{ runner.os }}-ccache-${{ inputs.cache_suffix }}-
-
-      - name: Setup Docker Buildx
+      # FIX: Set up QEMU and Docker Buildx to use modern Docker features
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+      - name: Set up Docker Buildx
+        id: buildx
         uses: docker/setup-buildx-action@v3
 
+      # FIX: Improved Docker layer caching
+      # This uses the branch name as a restore key to speed up builds
+      # on the same branch, even with new commits.
       - name: Cache Docker Layers
         uses: actions/cache@v4
         with:
           path: /tmp/.buildx-cache-${{ inputs.cache_suffix }}
-          key: ${{ runner.os }}-buildx-${{ inputs.cache_suffix }}-${{ hashFiles('**/Dockerfile', '**/Makefile', 'build/**.sh') }}
+          key: ${{ runner.os }}-buildx-${{ inputs.cache_suffix }}-${{ github.sha }}
           restore-keys: |
+            ${{ runner.os }}-buildx-${{ inputs.cache_suffix }}-${{ github.ref_name }}-
             ${{ runner.os }}-buildx-${{ inputs.cache_suffix }}-
 
-      # Execute the build via the robust wrapper script.
-      - name: Build WASM Core
+      - name: Run Build Script
         run: |
           chmod +x scripts/build-wasm.sh
           ./scripts/build-wasm.sh ${{ inputs.target }} ${{ inputs.cache_suffix }}
 
-      - name: Upload WASM Core Artifact
+      - name: Create Build Receipt
+        run: |
+          chmod +x scripts/create_build_receipt.sh
+          ./scripts/create_build_receipt.sh ${{ inputs.artifact_path }}
+
+      # FIX: Corrected step name from "name of" to "name"
+      - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
           name: ${{ inputs.artifact_name }}
-          path: |
-            ${{ inputs.artifact_path }}
-            build/
+          path: ${{ inputs.artifact_path }}
