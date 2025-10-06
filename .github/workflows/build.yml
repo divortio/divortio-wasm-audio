@@ -183,7 +183,7 @@ jobs:
 
   package-ffmpeg:
     name: 3d. Package ffmpeg
-    needs: build-ffmpeg-umd
+    needs: [build-ffmpeg-esm, build-ffmpeg-umd]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
