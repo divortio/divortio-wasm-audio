@@ -26,34 +26,14 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: "DIAGNOSTIC: Show Docker info before setup"
-        run: |
-          echo "--- Initial Docker/Buildx Version ---"
-          docker --version
-          docker buildx version
-          echo "--- Initial Builders List ---"
-          docker buildx ls
-
-      #
-      # FIX: Set up QEMU and Docker Buildx to use modern Docker features.
-      # This is the most important step. It installs a new builder instance
-      # that understands modern commands like "--mount".
-      #
+      # Setup QEMU and Docker Buildx, this is the most important step.
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
+      # FIX: Give the buildx setup step an ID so we can reference its output.
       - name: Set up Docker Buildx
         id: buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: "DIAGNOSTIC: Show Docker info after setup"
-        run: |
-          echo "--- Upgraded Docker/Buildx Version ---"
-          docker --version
-          docker buildx version
-          echo "--- Final Builders List (should show a new 'docker-container' builder) ---"
-          docker buildx ls
-
-      # This cache is for the Docker layers themselves, to speed up rebuilds.
       - name: Cache Docker Layers
         uses: actions/cache@v4
         with:
@@ -63,7 +43,11 @@ jobs:
             ${{ runner.os }}-buildx-${{ inputs.cache_suffix }}-${{ github.ref_name }}-
             ${{ runner.os }}-buildx-${{ inputs.cache_suffix }}-
 
+      # FIX: Pass the output of the 'buildx' step (the builder name) as an
+      #      environment variable to the build script and, by extension, to make.
       - name: Run Build Script
+        env:
+          BUILDX_BUILDER: ${{ steps.buildx.outputs.name }}
         run: |
           chmod +x scripts/*.sh
           ./scripts/build-wasm.sh ${{ inputs.target }} ${{ inputs.cache_suffix }}
