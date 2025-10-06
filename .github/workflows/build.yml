@@ -13,8 +13,6 @@ permissions:
 
 jobs:
   # --- Phase -1: Install Dependencies ---
-  # This new job installs npm dependencies once and caches the node_modules directory.
-  # Subsequent jobs will restore this cache, saving significant time.
   install-dependencies:
     name: Install Dependencies
     runs-on: ubuntu-latest
@@ -30,18 +28,14 @@ jobs:
         uses: actions/cache@v4
         with:
           path: '**/node_modules'
-          # The cache key is based on the hash of the package-lock.json file.
-          # The cache is only invalidated when dependencies change.
           key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
       - name: Install Dependencies
-        # This step only runs if the cache didn't exist.
         if: steps.cache-npm.outputs.cache-hit != 'true'
         run: npm install
 
   # --- Phase 0: Pre-Build Checks ---
   pre-build-checks:
     name: 0. Pre-Build Checks
-    # This job now depends on 'install-dependencies' to ensure node_modules is available.
     needs: install-dependencies
     runs-on: ubuntu-latest
     steps:
@@ -83,7 +77,6 @@ jobs:
   # --- Phase 2: Build JS Wrappers (Parallel) ---
   build-util-esm:
     name: 2a. Build util (ESM)
-    # This job now depends on the initial install, not pre-build checks, to run sooner.
     needs: install-dependencies
     uses: ./.github/workflows/reusable-build-js.yml
     with:
@@ -106,8 +99,7 @@ jobs:
     name: 2c. Build ffmpeg (ESM)
     needs:
       - build-wasm-st
-      - build-util-esm
-      - build-util-umd
+      - build-util-esm # Though not a direct code dependency, it's logically part of the same build phase
     uses: ./.github/workflows/reusable-build-js.yml
     with:
       package_name: ffmpeg
@@ -116,18 +108,19 @@ jobs:
       wasm_artifact_name: core-st-pkg
       artifact_name: ffmpeg-esm-dist
 
+  # --- THIS IS THE CRITICAL FIX ---
+  # The UMD build now explicitly depends on the ESM build completing successfully.
   build-ffmpeg-umd:
     name: 2d. Build ffmpeg (UMD)
     needs:
-      - build-wasm-st
-      - build-util-esm
-      - build-util-umd
+      - build-ffmpeg-esm # Ensures ESM artifacts are available before this job starts
+      - build-util-umd   # Logical grouping with other UMD builds
     uses: ./.github/workflows/reusable-build-js.yml
     with:
       package_name: ffmpeg
       format: umd
       needs_wasm: true
-      wasm_artifact_name: core-st-pkg
+      wasm_artifact_name: core-st-pkg # This is redundant as it's already fetched, but harmless
       artifact_name: ffmpeg-umd-dist
 
   # --- Phase 3: Package Individual Components (Parallel) ---
@@ -186,10 +179,12 @@ jobs:
 
   package-ffmpeg:
     name: 3d. Package ffmpeg
-    needs: [build-ffmpeg-esm, build-ffmpeg-umd]
+    # This now depends on the UMD build, which implicitly depends on the ESM build.
+    needs: build-ffmpeg-umd
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      # Because the UMD job depends on the ESM job, we need to download both artifacts.
       - uses: actions/download-artifact@v4
         with:
           name: ffmpeg-esm-dist
