@@ -13,6 +13,8 @@ permissions:
 
 jobs:
   # --- Phase -1: Install Dependencies ---
+  # This new job installs npm dependencies once and caches the node_modules directory.
+  # Subsequent jobs will restore this cache, saving significant time.
   install-dependencies:
     name: Install Dependencies
     runs-on: ubuntu-latest
@@ -99,7 +101,7 @@ jobs:
     name: 2c. Build ffmpeg (ESM)
     needs:
       - build-wasm-st
-      - build-util-esm # Though not a direct code dependency, it's logically part of the same build phase
+      - build-util-esm
     uses: ./.github/workflows/reusable-build-js.yml
     with:
       package_name: ffmpeg
@@ -108,20 +110,22 @@ jobs:
       wasm_artifact_name: core-st-pkg
       artifact_name: ffmpeg-esm-dist
 
-  # --- THIS IS THE CRITICAL FIX ---
-  # The UMD build now explicitly depends on the ESM build completing successfully.
   build-ffmpeg-umd:
     name: 2d. Build ffmpeg (UMD)
     needs:
-      - build-ffmpeg-esm # Ensures ESM artifacts are available before this job starts
-      - build-util-umd   # Logical grouping with other UMD builds
+      - build-ffmpeg-esm
+      - build-util-umd
     uses: ./.github/workflows/reusable-build-js.yml
     with:
       package_name: ffmpeg
       format: umd
       needs_wasm: true
-      wasm_artifact_name: core-st-pkg # This is redundant as it's already fetched, but harmless
+      wasm_artifact_name: core-st-pkg
       artifact_name: ffmpeg-umd-dist
+      # Pass the ESM artifact to the UMD build job
+      needs_js_artifact: true
+      js_artifact_name: ffmpeg-esm-dist
+      js_artifact_path: packages/ffmpeg/dist/esm
 
   # --- Phase 3: Package Individual Components (Parallel) ---
   package-core:
@@ -179,12 +183,10 @@ jobs:
 
   package-ffmpeg:
     name: 3d. Package ffmpeg
-    # This now depends on the UMD build, which implicitly depends on the ESM build.
     needs: build-ffmpeg-umd
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      # Because the UMD job depends on the ESM job, we need to download both artifacts.
       - uses: actions/download-artifact@v4
         with:
           name: ffmpeg-esm-dist

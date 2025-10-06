@@ -21,6 +21,17 @@ on:
       artifact_name:
         required: true
         type: string
+      # --- NEW INPUTS TO HANDLE JS DEPENDENCIES ---
+      needs_js_artifact:
+        required: false
+        type: boolean
+        default: false
+      js_artifact_name:
+        required: false
+        type: string
+      js_artifact_path:
+        required: false
+        type: string
 
 jobs:
   build:
@@ -37,19 +48,24 @@ jobs:
           name: ${{ inputs.wasm_artifact_name }}
           path: packages/core
 
+      # --- THIS IS THE CRITICAL FIX ---
+      # Download the prerequisite JS artifact (e.g., ESM build) if needed.
+      - name: Download JS Dependency Artifact
+        if: ${{ inputs.needs_js_artifact }}
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ inputs.js_artifact_name }}
+          path: ${{ inputs.js_artifact_path }}
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '22'
-          # REMOVED: cache: 'npm'
-
       - name: Restore node_modules
         uses: actions/cache@v4
         with:
           path: '**/node_modules'
           key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
-
-      # REMOVED: npm install step
 
       - name: Make Scripts Executable
         run: chmod +x scripts/*.sh

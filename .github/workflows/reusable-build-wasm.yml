@@ -1,42 +1,20 @@
 #
 # reusable-build-wasm.yml
 #
-# This is a reusable workflow designed to build a single FFmpeg WASM core.
-# It can be configured to build either the single-threaded (ST) or the
-# multi-threaded (MT) version.
-#
-# It is called by the main 'build.yml' workflow and is not intended to be
-# run directly.
-#
-# The workflow performs the following actions:
-#   1. Checks out the repository.
-#   2. Sets up a dual-layer cache (ccache and Docker layers) to speed up
-#      subsequent builds. The cache key is dynamic based on the inputs.
-#   3. Executes the specified 'make' target to compile the WASM core.
-#   4. Uploads the resulting compiled package AND the 'build' directory as a
-#      uniquely named artifact.
-#
-
 name: Reusable WASM Core Build
 
-# This 'on' block defines the workflow as a reusable workflow and declares
-# the inputs it requires.
 on:
   workflow_call:
     inputs:
-      # The 'make' target to execute (e.g., "build-st" or "build-mt").
       target:
         required: true
         type: string
-      # A unique suffix for the cache keys (e.g., "st" or "mt").
       cache_suffix:
         required: true
         type: string
-      # The name for the uploaded build artifact (e.g., "core-st-pkg").
       artifact_name:
         required: true
         type: string
-      # The path to the package directory to upload (e.g., "packages/core").
       artifact_path:
         required: true
         type: string
@@ -46,15 +24,17 @@ jobs:
     name: Build ${{ inputs.artifact_name }}
     runs-on: ubuntu-latest
     steps:
-      # Step 1: Check out the source code, including submodules.
       - name: Checkout Repository
         uses: actions/checkout@v4
         with:
           submodules: 'recursive'
 
-      # Step 2: Restore or create the ccache (compiler cache).
-      # The key is generated from a hash of the core build files, ensuring the
-      # cache is invalidated if the build configuration changes.
+      # --- THIS IS THE FIX ---
+      # Step 2a: Create the ccache directory on the host runner first.
+      - name: Create ccache Directory
+        run: mkdir -p .ccache
+
+      # Step 2b: Restore or create the ccache. The path now exists.
       - name: Cache ccache
         uses: actions/cache@v4
         with:
@@ -63,13 +43,9 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-ccache-${{ inputs.cache_suffix }}-
 
-      # Step 3: Set up the Docker Buildx environment, which is required for
-      # advanced Docker features like caching.
       - name: Setup Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      # Step 4: Restore or create the Docker layer cache. This speeds up the
-      # process of building the Docker image itself.
       - name: Cache Docker Layers
         uses: actions/cache@v4
         with:
@@ -78,15 +54,19 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-buildx-${{ inputs.cache_suffix }}-
 
-      # Step 5: Execute the main build command.
-      # It uses the 'target' input to call the correct make command (e.g., 'make -j build-st').
-      # It also passes the correct cache paths to the Docker build process.
+      # --- THIS IS THE FIX ---
+      # Step 5: Execute the main build command with an added Docker mount.
+      # This tells Docker to use the .ccache directory from the host machine,
+      # ensuring the cache is populated correctly for the post-job save.
       - name: Build WASM Core
-        run: make -j ${{ inputs.target }} EXTRA_ARGS="--cache-from=type=local,src=/tmp/.buildx-cache-${{ inputs.cache_suffix }} --cache-to=type=local,dest=/tmp/.buildx-cache-${{ inputs.cache_suffix }},mode=max"
+        run: >
+          make -j ${{ inputs.target }}
+          EXTRA_ARGS="
+          --mount=type=bind,source=$(pwd)/.ccache,target=/root/.ccache
+          --cache-from=type=local,src=/tmp/.buildx-cache-${{ inputs.cache_suffix }}
+          --cache-to=type=local,dest=/tmp/.buildx-cache-${{ inputs.cache_suffix }},mode=max
+          "
 
-      # Step 6: Upload the final compiled package as an artifact.
-      # It now uploads both the compiled package (e.g., packages/core) AND the
-      # 'build' directory, which contains the scripts needed for receipt generation.
       - name: Upload WASM Core Artifact
         uses: actions/upload-artifact@v4
         with:
