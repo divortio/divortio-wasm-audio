@@ -58,6 +58,11 @@ case "$PACKAGE_NAME" in
         npx tsc --build "packages/ffmpeg/tsconfig.esm.json"
         ;;
       umd)
+        # --- THIS IS THE CRITICAL FIX ---
+        # The ffmpeg UMD build depends on the ESM build being completed first.
+        echo "  - Building ESM dependency for UMD bundle..."
+        npx tsc --build "packages/ffmpeg/tsconfig.esm.json"
+
         # Apply the same fix for the ffmpeg package's UMD build.
         echo "  - Building UMD bundle with Webpack..."
         (cd "packages/ffmpeg" && npx webpack)
