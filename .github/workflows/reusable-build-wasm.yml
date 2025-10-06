@@ -29,12 +29,9 @@ jobs:
         with:
           submodules: 'recursive'
 
-      # --- THIS IS THE FIX ---
-      # Step 2a: Create the ccache directory on the host runner first.
       - name: Create ccache Directory
         run: mkdir -p .ccache
 
-      # Step 2b: Restore or create the ccache. The path now exists.
       - name: Cache ccache
         uses: actions/cache@v4
         with:
@@ -54,18 +51,11 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-buildx-${{ inputs.cache_suffix }}-
 
-      # --- THIS IS THE FIX ---
-      # Step 5: Execute the main build command with an added Docker mount.
-      # This tells Docker to use the .ccache directory from the host machine,
-      # ensuring the cache is populated correctly for the post-job save.
+      # --- THIS IS THE CRITICAL FIX ---
+      # The EXTRA_ARGS are now on a single line to prevent newline characters
+      # from breaking the command parsing within the Makefile.
       - name: Build WASM Core
-        run: >
-          make -j ${{ inputs.target }}
-          EXTRA_ARGS="
-          --mount=type=bind,source=$(pwd)/.ccache,target=/root/.ccache
-          --cache-from=type=local,src=/tmp/.buildx-cache-${{ inputs.cache_suffix }}
-          --cache-to=type=local,dest=/tmp/.buildx-cache-${{ inputs.cache_suffix }},mode=max
-          "
+        run: make -j ${{ inputs.target }} EXTRA_ARGS="--mount=type=bind,source=$(pwd)/.ccache,target=/root/.ccache --cache-from=type=local,src=/tmp/.buildx-cache-${{ inputs.cache_suffix }} --cache-to=type=local,dest=/tmp/.buildx-cache-${{ inputs.cache_suffix }},mode=max"
 
       - name: Upload WASM Core Artifact
         uses: actions/upload-artifact@v4
