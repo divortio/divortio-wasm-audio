@@ -12,7 +12,7 @@ permissions:
   contents: write
 
 jobs:
-  # This job installs dependencies that are cached for later steps.
+  # Installs and caches Node.js dependencies
   install-dependencies:
     name: Install Dependencies
     runs-on: ubuntu-latest
@@ -33,6 +33,7 @@ jobs:
         if: steps.cache-npm.outputs.cache-hit != 'true'
         run: npm install
 
+  # Lints the codebase as a pre-build check
   pre-build-checks:
     name: 0. Pre-Build Checks
     needs: install-dependencies
@@ -52,7 +53,7 @@ jobs:
       - name: Run Linter
         run: npm run lint --workspace=@ffmpeg/util
 
-  # --- Phase 1: Build Binaries (Parallel) ---
+  # --- Phase 1: Build WASM Binaries (Parallel) ---
   build-wasm-st:
     name: 1a. Build WASM Core (ST)
     needs: pre-build-checks
@@ -73,18 +74,19 @@ jobs:
       artifact_name: core-mt-pkg
       artifact_path: packages/core-mt
 
-  # --- Phase 2: Build JS Wrappers (Parallel) ---
+  # --- Phase 2: Build JS Wrappers ---
   build-js-wrappers:
     name: 2. Build JS Wrappers
-    needs: [install-dependencies, build-wasm-st, build-wasm-mt]
+    needs: [install-dependencies, build-wasm-st]
     uses: ./.github/workflows/reusable-build-js.yml
+    # FIX: Add the 'with' block to provide the required inputs.
     with:
       wasm_artifact_name_st: core-st-pkg
       wasm_artifact_name_mt: core-mt-pkg
 
-  # --- Phase 3: Package Individual Components (Parallel) ---
+  # --- Phase 3: Package All Components (Parallel) ---
   package-core:
-    name: 3a. Package core
+    name: 3a. Package core (ST)
     needs: build-wasm-st
     runs-on: ubuntu-latest
     steps:
@@ -92,6 +94,7 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           name: core-st-pkg
+          path: packages/core
       - run: chmod +x scripts/*.sh && ./scripts/package-core.sh
       - uses: actions/upload-artifact@v4
         with:
@@ -99,7 +102,7 @@ jobs:
           path: builds/
 
   package-core-mt:
-    name: 3b. Package core-mt
+    name: 3b. Package core (MT)
     needs: build-wasm-mt
     runs-on: ubuntu-latest
     steps:
@@ -107,6 +110,7 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           name: core-mt-pkg
+          path: packages/core-mt
       - run: chmod +x scripts/*.sh && ./scripts/package-core-mt.sh
       - uses: actions/upload-artifact@v4
         with:
@@ -114,14 +118,15 @@ jobs:
           path: builds/
 
   package-js:
-    name: 3c. Package JS
+    name: 3c. Package JS Wrappers
     needs: build-js-wrappers
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
-          path: dist
+          name: js-dists
+          path: packages/
       - run: chmod +x scripts/*.sh && ./scripts/package-util.sh && ./scripts/package-ffmpeg.sh
       - uses: actions/upload-artifact@v4
         with:
@@ -135,18 +140,20 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Download all packaged builds
-        uses: actions/download-artifact@v4
+      # Download all packaged .zip files into one directory
+      - uses: actions/download-artifact@v4
         with:
           name: packaged-builds
           path: builds/
-      # For version reading, download the core artifacts as well
+      # Download source packages needed to read version numbers
       - uses: actions/download-artifact@v4
         with:
           name: core-st-pkg
+          path: packages/core
       - uses: actions/download-artifact@v4
         with:
           name: core-mt-pkg
+          path: packages/core-mt
       - name: Create and Publish Release
         run: |
           chmod +x scripts/create_release.sh
