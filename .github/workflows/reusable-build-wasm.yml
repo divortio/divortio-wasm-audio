@@ -1,6 +1,3 @@
-#
-# reusable-build-wasm.yml - Reusable Workflow to Build WASM Core
-#
 name: Reusable Build WASM Core
 
 on:
@@ -26,10 +23,10 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      # Setup QEMU and Docker Buildx, this is the most important step.
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
-      # FIX: Give the buildx setup step an ID so we can reference its output.
+
+      # This step creates the modern builder and gives it an ID ("buildx")
       - name: Set up Docker Buildx
         id: buildx
         uses: docker/setup-buildx-action@v3
@@ -43,8 +40,7 @@ jobs:
             ${{ runner.os }}-buildx-${{ inputs.cache_suffix }}-${{ github.ref_name }}-
             ${{ runner.os }}-buildx-${{ inputs.cache_suffix }}-
 
-      # FIX: Pass the output of the 'buildx' step (the builder name) as an
-      #      environment variable to the build script and, by extension, to make.
+      # This step passes the builder's name to the script's environment
       - name: Run Build Script
         env:
           BUILDX_BUILDER: ${{ steps.buildx.outputs.name }}
