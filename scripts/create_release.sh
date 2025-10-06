@@ -2,86 +2,115 @@
 #
 # create_release.sh
 #
-# This script creates a formal GitHub Release, packaging build artifacts into
-# flexible zip files and generating clean release notes.
-# It has been updated to handle nested artifact directories and create
-# a unique tag for the release.
-#
 
+
+# --- Script Configuration ---
+
+# Exit immediately if a command exits with a non-zero status.
 set -euo pipefail
+
+# --- Main Execution ---
 
 echo "--- Creating GitHub Release ---"
 
-# --- Data Generation and Validation ---
-
+# Check if the builds directory exists before proceeding.
 if [ ! -d "builds" ]; then
   echo "❌ ERROR: 'builds' directory not found. Cannot create release."
   exit 1
 fi
 
-# Validate that the source package.json files are available to read versions.
-if [ ! -f "packages/core/package.json" ] || [ ! -f "packages/core-mt/package.json" ] || [ ! -f "packages/ffmpeg/package.json" ] || [ ! -f "packages/util/package.json" ]; then
-  echo "❌ ERROR: One or more source package.json files are missing. Cannot determine versions."
-  echo "Listing contents of 'packages' directory:"
-  ls -R packages
+# The build receipt must exist in the root of a core package.
+# We'll use the single-threaded core to find it.
+CORE_VERSION=$(jq -r .version "packages/core/package.json")
+RECEIPT_PATH="builds/core@${CORE_VERSION}/build-receipt.json"
+
+if [ ! -f "$RECEIPT_PATH" ]; then
+  echo "❌ ERROR: Build receipt not found at '$RECEIPT_PATH'. Cannot generate release notes."
   exit 1
 fi
 
+
+# --- 1. Packaging Logic ---
+
+echo "Packaging build artifacts..."
+# Create a temporary directory for our zip files.
+mkdir -p release_assets
+
+# Find all versioned directories inside 'builds/'.
+# The `-mindepth 1 -maxdepth 1` ensures we only get the top-level package directories.
+
+find builds -mindepth 1 -maxdepth 1 -type d | while read -r dir; do
+  # Get the directory name (e.g., "core@0.12.10").
+  dirname=$(basename "$dir")
+  # Create a zip file for this individual package.
+  (cd "$dir" && zip -r "../../release_assets/${dirname}.zip" .)
+  echo "  ✔️  Created individual package: ${dirname}.zip"
+done
+
+## Create a single, all-inclusive zip file.
+#(cd builds && zip -r "../release_assets/ffmpeg-audio-build-all.zip" .)
+#echo "  ✔️  Created all-in-one package: ffmpeg-audio-build-all.zip"
+
+
+# --- 2. Release Tagging ---
+
+# Construct the f
+# --- 3. Verbose Release Notes ---
+
+echo "Generating verbose release notes..."
+
+# Read version numbers from each package.json
 CORE_VERSION=$(jq -r .version "packages/core/package.json")
 CORE_MT_VERSION=$(jq -r .version "packages/core-mt/package.json")
 FFMPEG_VERSION=$(jq -r .version "packages/ffmpeg/package.json")
 UTIL_VERSION=$(jq -r .version "packages/util/package.json")
-DATETIME=$(date -u +"%Y%m%dT%H%M%SZ")
-# Use a clean, datetime-based tag for the monolithic release.
-TAG="release-${DATETIME}"
 
-# --- Packaging Logic ---
+# Get the current ISO 8601 timestamp.
+DATETIME=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 
-echo "Packaging build artifacts for release..."
-rm -rf release_assets
-mkdir -p release_assets
-mkdir -p release_assets/all-esm
-mkdir -p release_assets/all-umd
+inal Git tag.
+TAG="v${FFMPEG_VERSION}-${DATETIME}"
+echo "Generated release tag: ${TAG}"
 
-# --- THIS IS THE CRITICAL FIX ---
-# The 'find' command now searches the entire 'builds' directory tree to locate
-# the versioned directories, regardless of how they are nested.
-find builds -type d -name "*@*" | while read -r versioned_dir; do
-  pkg_name_version=$(basename "$versioned_dir")
-  pkg_name=$(echo "$pkg_name_version" | cut -d'@' -f1)
-  find "$versioned_dir/dist" -mindepth 1 -maxdepth 1 -type d | while read -r module_dir; do
-    module_type=$(basename "$module_dir")
-    zip_filename="${pkg_name_version}-${module_type}.zip"
-    (cd "$module_dir" && zip -r "../../../../release_assets/${zip_filename}" .)
-    echo "  ✔️  Created individual package: ${zip_filename}"
-    mkdir -p "release_assets/all-${module_type}/${pkg_name}"
-    cp -a "$module_dir"/* "release_assets/all-${module_type}/${pkg_name}/"
-  done
-done
 
-(cd release_assets/all-esm && zip -r ../ffmpeg-audio-build-esm.zip .)
-echo "  ✔️  Created aggregate package: ffmpeg-audio-build-esm.zip"
-(cd release_assets/all-umd && zip -r ../ffmpeg-audio-build-umd.zip .)
-echo "  ✔️  Created aggregate package: ffmpeg-audio-build-umd.zip"
-rm -rf release_assets/all-esm release_assets/all-umd
+# 2. Construct the commit body.
+# Start with a newline to separate it from the title.
+COMMIT_BODY=$'\\n'
 
-# --- Release Notes Generation ---
+# Add the "Packages Built" section.
+COMMIT_BODY+="CI BUILD:${DATETIME}| \\n"
+COMMIT_BODY+="----------------\\n"
+COMMIT_BODY+="- core@${CORE_VERSION}\\n"
+COMMIT_BODY+="- core-mt@${CORE_MT_VERSION}\\n"
+COMMIT_BODY+="- ffmpeg@${FFMPEG_VERSION}\\n"
+COMMIT_BODY+="- util@${UTIL_VERSION}\\n\\n"
 
-echo "Generating release notes..."
+# Add the "Build Artifact Paths" section.
+COMMIT_BODY+="Build Artifact Paths:\\n"
+COMMIT_BODY+="---------------------\\n"
+COMMIT_BODY+="- builds/core@${CORE_VERSION}\\n"
+COMMIT_BODY+="- builds/core-mt@${CORE_MT_VERSION}\\n"
+COMMIT_BODY+="- builds/ffmpeg@${FFMPEG_VERSION}\\n"
+COMMIT_BODY+="- builds/util@${UTIL_VERSION}\\n\\n"
+
+# Use a temporary file to store the multi-line release notes.
 RELEASE_NOTES_FILE=$(mktemp)
+
+# Construct the release body.
+# Using 'cat <<EOF' is a robust way to handle multi-line strings in bash.
 cat <<EOF > "$RELEASE_NOTES_FILE"
-### Packages Built
-- \`core@${CORE_VERSION}\`
-- \`core-mt@${CORE_MT_VERSION}\`
-- \`ffmpeg@${FFMPEG_VERSION}\`
-- \`util@${UTIL_VERSION}\`
+${COMMIT_BODY}
 EOF
 
-# --- Release Creation and Upload ---
 
-echo "Creating GitHub Release with tag: ${TAG}"
+# --- 4. Release Creation and Upload ---
+
+echo "Creating GitHub Release and uploading assets..."
+
+# Use the GitHub CLI to create the release.
+# The GITHUB_TOKEN environment variable must be set in the workflow.
 gh release create "$TAG" \
-  --title "Build: ${DATETIME}" \
+  --title "Build: ${TAG}" \
   --notes-file "$RELEASE_NOTES_FILE" \
   release_assets/*.zip
 
