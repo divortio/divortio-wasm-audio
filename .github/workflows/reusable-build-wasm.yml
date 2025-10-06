@@ -26,16 +26,34 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      # FIX: Set up QEMU and Docker Buildx to use modern Docker features
+      - name: "DIAGNOSTIC: Show Docker info before setup"
+        run: |
+          echo "--- Initial Docker/Buildx Version ---"
+          docker --version
+          docker buildx version
+          echo "--- Initial Builders List ---"
+          docker buildx ls
+
+      #
+      # FIX: Set up QEMU and Docker Buildx to use modern Docker features.
+      # This is the most important step. It installs a new builder instance
+      # that understands modern commands like "--mount".
+      #
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
       - name: Set up Docker Buildx
         id: buildx
         uses: docker/setup-buildx-action@v3
 
-      # FIX: Improved Docker layer caching
-      # This uses the branch name as a restore key to speed up builds
-      # on the same branch, even with new commits.
+      - name: "DIAGNOSTIC: Show Docker info after setup"
+        run: |
+          echo "--- Upgraded Docker/Buildx Version ---"
+          docker --version
+          docker buildx version
+          echo "--- Final Builders List (should show a new 'docker-container' builder) ---"
+          docker buildx ls
+
+      # This cache is for the Docker layers themselves, to speed up rebuilds.
       - name: Cache Docker Layers
         uses: actions/cache@v4
         with:
@@ -47,7 +65,7 @@ jobs:
 
       - name: Run Build Script
         run: |
-          chmod +x scripts/build-wasm.sh
+          chmod +x scripts/*.sh
           ./scripts/build-wasm.sh ${{ inputs.target }} ${{ inputs.cache_suffix }}
 
       - name: Create Build Receipt
@@ -55,7 +73,6 @@ jobs:
           chmod +x scripts/create_build_receipt.sh
           ./scripts/create_build_receipt.sh ${{ inputs.artifact_path }}
 
-      # FIX: Corrected step name from "name of" to "name"
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
