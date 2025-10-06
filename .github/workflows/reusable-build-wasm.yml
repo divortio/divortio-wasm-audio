@@ -48,7 +48,9 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      # REMOVED: The "Create Build Receipt" step has been deleted.
+      # FIX: Change ownership of the Docker output files to the runner user.
+      - name: Fix permissions
+        run: sudo chown -R runner:docker ${{ github.workspace }}
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
