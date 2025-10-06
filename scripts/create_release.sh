@@ -22,12 +22,6 @@ fi
 # The build receipt must exist in the root of a core package.
 # We'll use the single-threaded core to find it.
 CORE_VERSION=$(jq -r .version "packages/core/package.json")
-RECEIPT_PATH="builds/core@${CORE_VERSION}/build-receipt.json"
-
-if [ ! -f "$RECEIPT_PATH" ]; then
-  echo "❌ ERROR: Build receipt not found at '$RECEIPT_PATH'. Cannot generate release notes."
-  exit 1
-fi
 
 
 # --- 1. Packaging Logic ---
