@@ -99,9 +99,7 @@ organize_package() {
   if [ -f "$pkg_path/README.md" ]; then
     cp "$pkg_path/README.md" "$target_dir/"
   fi
-  if [[ "$pkg_name" == "core" || "$pkg_name" == "core-mt" ]]; then
-    cp build-receipt.json "$target_dir/"
-  fi
+
   validate_package "$target_dir" "$pkg_name"
 }
 
