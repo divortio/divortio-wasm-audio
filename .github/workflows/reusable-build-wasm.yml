@@ -1,18 +1,15 @@
-name: Reusable Build WASM Core
+#
+# reusable-build-js.yml - Reusable Workflow to Build JS Packages
+#
+name: Reusable Build JS
 
 on:
   workflow_call:
     inputs:
-      target:
+      wasm_artifact_name_st:
         required: true
         type: string
-      cache_suffix:
-        required: true
-        type: string
-      artifact_name:
-        required: true
-        type: string
-      artifact_path:
+      wasm_artifact_name_mt:
         required: true
         type: string
 
@@ -23,38 +20,50 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
 
-      # This step creates the modern builder and gives it an ID ("buildx")
-      - name: Set up Docker Buildx
-        id: buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Cache Docker Layers
+      # FIX: Add caching for node_modules to speed up dependency installation.
+      - name: Cache node_modules
+        id: cache-npm
         uses: actions/cache@v4
         with:
-          path: /tmp/.buildx-cache-${{ inputs.cache_suffix }}
-          key: ${{ runner.os }}-buildx-${{ inputs.cache_suffix }}-${{ github.sha }}
+          path: '**/node_modules'
+          key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
           restore-keys: |
-            ${{ runner.os }}-buildx-${{ inputs.cache_suffix }}-${{ github.ref_name }}-
-            ${{ runner.os }}-buildx-${{ inputs.cache_suffix }}-
+            ${{ runner.os }}-node-
 
-      # This step passes the builder's name to the script's environment
-      - name: Run Build Script
-        env:
-          BUILDX_BUILDER: ${{ steps.buildx.outputs.name }}
+      # FIX: Only run 'npm install' if the cache was not restored.
+      - name: Install Dependencies
+        if: steps.cache-npm.outputs.cache-hit != 'true'
+        run: npm install
+
+      - name: Download WASM Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ inputs.wasm_artifact_name_st }}
+          path: packages/core
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ inputs.wasm_artifact_name_mt }}
+          path: packages/core-mt
+
+      - name: Build JS Packages
         run: |
-          chmod +x scripts/*.sh
-          ./scripts/build-wasm.sh ${{ inputs.target }} ${{ inputs.cache_suffix }}
+          chmod +x scripts/build-js-package.sh
+          # Build util (ESM and UMD)
+          ./scripts/build-js-package.sh util esm
+          ./scripts/build-js-package.sh util umd
+          # Build ffmpeg (ESM and UMD)
+          ./scripts/build-js-package.sh ffmpeg esm
+          ./scripts/build-js-package.sh ffmpeg umd
 
-      - name: Create Build Receipt
-        run: |
-          chmod +x scripts/create_build_receipt.sh
-          ./scripts/create_build_receipt.sh ${{ inputs.artifact_path }}
-
-      - name: Upload Artifact
+      - name: Upload All JS Dist Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ inputs.artifact_name }}
-          path: ${{ inputs.artifact_path }}
+          name: js-dists
+          path: |
+            packages/util/dist
+            packages/ffmpeg/dist
