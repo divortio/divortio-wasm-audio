@@ -51,8 +51,7 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-buildx-${{ inputs.cache_suffix }}-
 
-      # --- The New Approach ---
-      # Execute the build via the wrapper script to handle argument passing correctly.
+      # Execute the build via the robust wrapper script.
       - name: Build WASM Core
         run: |
           chmod +x scripts/build-wasm.sh
