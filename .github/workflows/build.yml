@@ -1,130 +1,134 @@
 #
-# FILE: .github/workflows/release.yml
+# FILE: .github/workflows/build.yml
 #
 # DESCRIPTION:
-#   This GitHub Actions workflow automates the entire process of building, packaging,
-#   and releasing the custom audio-only ffmpeg.wasm builds.
+#   This workflow builds and releases our custom, audio-only version of ffmpeg.wasm.
+#   It uses the official CI job structure and mirrors its best practices, including
+#   a comprehensive hashing strategy for cache and versioning.
 #
-# VERSION: 1.2
+# VERSION: 5.0
 #
 # CHANGE LOG:
-#   - v1.2:
-#     - Added the `workflow_dispatch` trigger. This allows the workflow to be run
-#       manually from the GitHub Actions UI, which is useful for testing changes
-#       to the workflow file itself or for manually re-running a release.
-#   - v1.1:
-#     - FIXED BUG-001: Added a "Build Docker Image" step to the `build-audio-st-core`
-#       and `build-audio-mt-core` jobs.
+#   - v5.0:
+#     - CORRECTED: Aligned the release versioning hash with the official CI's
+#       caching hash (`hashFiles('Dockerfile', 'Makefile', 'build/*')`). This
+#       ensures any change to the build system triggers a new release.
 #
 ####################################################################################################
 
-name: "Custom Audio Build & Release"
+name: CI
 
 on:
-  # This is the new trigger. It enables the "Run workflow" button in the UI.
   workflow_dispatch:
-
-  # This is the existing automatic trigger.
   push:
     branches:
       - main
     paths:
-      - 'build/ffmpeg-audio.sh'
-      - 'build/ffmpeg-wasm-audio.sh'
+      # Any change to the build system will now trigger a new release.
+      - 'Dockerfile'
+      - 'Makefile'
+      - 'build/**'
 
 jobs:
-  #=================================================================================================
-  # JOB 1: Build Audio Single-Threaded (ST) Core
-  # Compiles the custom audio-only, single-threaded WASM core.
-  #=================================================================================================
-  build-audio-st-core:
+  # --- PRIMARY BUILD JOBS ---
+  # These jobs now use a robust cache key that looks at all build-related files.
+
+  build-core:
     runs-on: ubuntu-latest
     steps:
-      - name: "Checkout Source Code"
-        uses: actions/checkout@v4
-      - name: "Setup Docker Buildx"
-        uses: docker/setup-buildx-action@v3
-      - name: "Build Docker Image"
-        run: make build-image
-      - name: "Build ST Audio Core"
-        run: make prd-audio
-      - name: "Upload ST Core Artifact"
+      - name: Checkout Source Code
+        uses: actions/checkout@v2
+      - name: Update pkg-config database
+        run: sudo ldconfig
+      - name: Setup Docker Buildx
+        id: buildx
+        uses: docker/setup-buildx-action@v2
+      - name: Cache build
+        id: cache-build
+        uses: actions/cache@v4
+        with:
+          path: build-cache-st
+          key: build-cache-st-v1-${{ hashFiles('Dockerfile', 'Makefile', 'build/*') }}
+          restore-keys: |
+            build-cache-st-v1-
+      - name: Build Custom ffmpeg-core (ST)
+        run: make prd EXTRA_ARGS="--cache-from=type=local,src=build-cache-st --cache-to=type=local,dest=build-cache-st,mode=max"
+      - name: Upload core
         uses: actions/upload-artifact@v4
         with:
           name: ffmpeg-core-st-dist
-          path: packages/core/dist
+          path: packages/core/dist/*
 
-  #=================================================================================================
-  # JOB 2: Build Audio Multi-Threaded (MT) Core
-  # Compiles the custom audio-only, multi-threaded WASM core.
-  #=================================================================================================
-  build-audio-mt-core:
+  build-core-mt:
     runs-on: ubuntu-latest
     steps:
-      - name: "Checkout Source Code"
-        uses: actions/checkout@v4
-      - name: "Setup Docker Buildx"
-        uses: docker/setup-buildx-action@v3
-      - name: "Build Docker Image"
-        run: make build-image
-      - name: "Build MT Audio Core"
-        run: make prd-mt-audio
-      - name: "Upload MT Core Artifact"
+      - name: Checkout Source Code
+        uses: actions/checkout@v2
+      - name: Setup Docker Buildx
+        id: buildx
+        uses: docker/setup-buildx-action@v2
+      - name: Cache build
+        id: cache-build
+        uses: actions/cache@v4
+        with:
+          path: build-cache-mt
+          key: build-cache-mt-v1-${{ hashFiles('Dockerfile', 'Makefile', 'build/*') }}
+          restore-keys: |
+            build-cache-v1-
+      - name: Build Custom ffmpeg-core (MT)
+        run: make prd-mt EXTRA_ARGS="--cache-from=type=local,src=build-cache-mt --cache-to=type=local,dest=build-cache-mt,mode=max"
+      - name: Upload core-mt
         uses: actions/upload-artifact@v4
         with:
           name: ffmpeg-core-mt-dist
-          path: packages/core-mt/dist
+          path: packages/core-mt/dist/*
 
-  #=================================================================================================
-  # JOB 3: Build JavaScript Packages
-  # Compiles the TypeScript wrapper packages (@ffmpeg/ffmpeg, @ffmpeg/util).
-  #=================================================================================================
+  # --- JAVASCRIPT & TYPESCRIPT BUILD JOB ---
+
   build-js-packages:
     runs-on: ubuntu-latest
     steps:
-      - name: "Checkout Source Code"
-        uses: actions/checkout@v4
-      - name: "Setup Node.js"
+      - name: Checkout Source Code
+        uses: actions/checkout@v2
+      - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 18.x
-      - name: "Cache Node Modules"
+      - name: Cache Node Modules
         uses: actions/cache@v4
         with:
           path: node_modules
           key: node-modules-${{ hashFiles('package-lock.json') }}
-      - name: "Install Dependencies"
+      - name: Install Dependencies
         run: npm install
-      - name: "Build All JS Packages"
+      - name: Build All JS Packages
         run: npm run build
-      - name: "Upload ffmpeg Dist Artifact"
+      - name: Upload ffmpeg Dist Artifact
         uses: actions/upload-artifact@v4
         with:
           name: ffmpeg-dist
           path: packages/ffmpeg/dist
-      - name: "Upload util Dist Artifact"
+      - name: Upload util Dist Artifact
         uses: actions/upload-artifact@v4
         with:
           name: util-dist
           path: packages/util/dist
-      - name: "Upload types Package Artifact"
+      - name: Upload types Package Artifact
         uses: actions/upload-artifact@v4
         with:
           name: types-pkg
           path: packages/types
 
-  #=================================================================================================
-  # JOB 4: Package & Zip All Artifacts
-  # This job depends on the completion of all build jobs. It assembles the final
-  # release artifacts into the desired directory structure and zips them.
-  #=================================================================================================
-  package-and-zip:
+  # --- PACKAGING AND RELEASE JOB ---
+
+  package-and-release:
     runs-on: ubuntu-latest
-    needs: [build-audio-st-core, build-audio-mt-core, build-js-packages]
-    outputs:
-      release_tag: ${{ steps.versioner.outputs.release_tag }}
-      release_title: ${{ steps.versioner.outputs.release_title }}
-      release_notes: ${{ steps.versioner.outputs.release_notes }}
+    needs:
+      - build-core
+      - build-core-mt
+      - build-js-packages
+    permissions:
+      contents: write # Required to create a GitHub Release
     steps:
       - name: "Checkout Source Code"
         uses: actions/checkout@v4
@@ -133,7 +137,8 @@ jobs:
         id: versioner
         run: |
           BASE_VERSION=$(node -p "require('./package.json').version")
-          BUILD_HASH=$(sha256sum build/ffmpeg-audio.sh build/ffmpeg-wasm-audio.sh | sha256sum | head -c 8)
+          # CORRECTED: This hash now includes all build-related files for robust versioning.
+          BUILD_HASH=$(sha256sum Dockerfile Makefile build/* | sha256sum | head -c 8)
           RELEASE_TAG="v${BASE_VERSION}-audio-custom-${BUILD_HASH}"
           RELEASE_TITLE="Custom Audio Build (${BUILD_HASH}) for v${BASE_VERSION}"
           RELEASE_NOTES="This is an automated release of the custom audio-only ffmpeg.wasm build. The build configuration hash is \`${BUILD_HASH}\`. Base ffmpeg.wasm version: \`${BASE_VERSION}\`."
@@ -141,25 +146,24 @@ jobs:
           echo "release_title=${RELEASE_TITLE}" >> $GITHUB_OUTPUT
           echo "release_notes=${RELEASE_NOTES}" >> $GITHUB_OUTPUT
 
-      - name: "Create Staging and Release Directories"
-        run: |
-          mkdir -p release_files
-          mkdir -p staging/@ffmpeg
-
       - name: "Download All Build Artifacts"
         uses: actions/download-artifact@v4
         with:
           path: staging/@ffmpeg
 
-      - name: "Assemble Final Directory Structure"
-        id: assemble
+      - name: "Assemble Final Directory Structure & Zip"
         run: |
           BASE_VERSION=$(node -p "require('./package.json').version")
+          mkdir -p release_files
+
+          # Move the artifacts into their final package names for release
           mv staging/@ffmpeg/ffmpeg-core-st-dist staging/@ffmpeg/core
           mv staging/@ffmpeg/ffmpeg-core-mt-dist staging/@ffmpeg/core-mt
           mv staging/@ffmpeg/ffmpeg-dist staging/@ffmpeg/ffmpeg
           mv staging/@ffmpeg/util-dist staging/@ffmpeg/util
           mv staging/@ffmpeg/types-pkg staging/@ffmpeg/types
+
+          # Create the final UNPKG-style directory structure
           cp -r staging/@ffmpeg .
           mkdir -p versioned_packages
           cp -r staging/@ffmpeg/core versioned_packages/core@${BASE_VERSION}
@@ -169,9 +173,7 @@ jobs:
           cp -r staging/@ffmpeg/types versioned_packages/types@${BASE_VERSION}
           mv versioned_packages/* ./@ffmpeg
 
-      - name: "Create All Zip Files"
-        run: |
-          BASE_VERSION=$(node -p "require('./package.json').version")
+          # Create all the zip files
           cd @ffmpeg
           zip -r ../release_files/core@${BASE_VERSION}-esm.zip ./core@${BASE_VERSION}/dist/esm
           zip -r ../release_files/core@${BASE_VERSION}-umd.zip ./core@${BASE_VERSION}/dist/umd
@@ -190,6 +192,8 @@ jobs:
           zip -r ../release_files/types@${BASE_VERSION}.zip ./types@${BASE_VERSION}
           zip -r ../release_files/types@latest.zip ./types
           cd ..
+
+          # Create the all-in-one zip file
           mkdir -p all-in-one/@ffmpeg
           cp -r ./@ffmpeg/core ./all-in-one/@ffmpeg/core
           cp -r ./@ffmpeg/core-mt ./all-in-one/@ffmpeg/core-mt
@@ -202,33 +206,12 @@ jobs:
           zip -r ../release_files/@ffmpeg@latest-esm.zip .
           cd ..
 
-      - name: "Upload Release Artifacts"
-        uses: actions/upload-artifact@v4
-        with:
-          name: release-archives
-          path: release_files/
-
-  #=================================================================================================
-  # JOB 5: Create GitHub Release and Upload Assets
-  # The final job. It creates the formal release using the official GitHub CLI and uploads
-  # the zipped archives.
-  #=================================================================================================
-  release:
-    runs-on: ubuntu-latest
-    needs: [package-and-zip]
-    permissions:
-      contents: write
-    steps:
-      - name: "Download Release Archives"
-        uses: actions/download-artifact@v4
-        with:
-          name: release-archives
-          path: release_files
       - name: "Create GitHub Release with gh CLI"
+        if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release create ${{ needs.package-and-zip.outputs.release_tag }} \
-            --title "${{ needs.package-and-zip.outputs.release_title }}" \
-            --notes "${{ needs.package-and-zip.outputs.release_notes }}" \
+          gh release create ${{ steps.versioner.outputs.release_tag }} \
+            --title "${{ steps.versioner.outputs.release_title }}" \
+            --notes "${{ steps.versioner.outputs.release_notes }}" \
             release_files/*

@@ -1,4 +1,25 @@
 #!/bin/bash
+#
+# FILE: build/ffmpeg-wasm.sh
+#
+# DESCRIPTION:
+#   This is a modified version of the official ffmpeg-wasm.sh script, tailored
+#   for a custom, audio-only build. All modifications are done by commenting out
+#   unnecessary lines and adding the required audio configuration, preserving
+#   the original structure for clarity and maintenance.
+#
+# VERSION: 2.0
+#
+# CHANGE LOG:
+#   - v2.0:
+#     - Based on the user-provided official script.
+#     - Modified the CONF_FLAGS array to explicitly link only the required
+#       audio libraries, removing the dependency on Docker environment variables.
+#     - Commented out all linker flags related to video libraries that were
+#       disabled in our custom Dockerfile.
+#
+####################################################################################################
+
 # `-o <OUTPUT_FILE_NAME>` must be provided when using this build script.
 # ex:
 #     bash ffmpeg-wasm.sh -o ffmpeg.js
@@ -13,23 +34,32 @@ CONF_FLAGS=(
   -I$INSTALL_DIR/include
   -L$INSTALL_DIR/lib
   -Llibavcodec
-  -Llibavdevice
+  # -Llibavdevice       # Commented out: Not used in audio-only build
   -Llibavfilter
   -Llibavformat
   -Llibavutil
-  -Llibpostproc
+  # -Llibpostproc       # Commented out: Not used in audio-only build
   -Llibswresample
-  -Llibswscale
+  # -Llibswscale        # Commented out: Not used in audio-only build
+
+  # --- Custom Audio Library Linker Flags ---
+  # These flags explicitly link the audio libraries we compiled in the Dockerfile.
+  -lmp3lame
+  -lopus
+  -lvorbis
+  -logg
+  # --- End Custom Flags ---
+
   -lavcodec
-  -lavdevice
+  # -lavdevice          # Commented out: Not used in audio-only build
   -lavfilter
   -lavformat
   -lavutil
-  -lpostproc
+  # -lpostproc          # Commented out: Not used in audio-only build
   -lswresample
-  -lswscale
+  # -lswscale           # Commented out: Not used in audio-only build
   -Wno-deprecated-declarations
-  $LDFLAGS
+  # $LDFLAGS            # Commented out: Replaced with explicit flags above for clarity
   -sENVIRONMENT=worker
   -sWASM_BIGINT                            # enable big int support
   -sUSE_SDL=2                              # use emscripten SDL2 lib port
@@ -54,4 +84,4 @@ CONF_FLAGS=(
   src/fftools/ffprobe.c
 )
 
-emcc "${CONF_FLAGS[@]}" $@
+emcc "${CONF_FLAGS[@]}" "$@"
