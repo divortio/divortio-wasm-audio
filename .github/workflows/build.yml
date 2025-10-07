@@ -36,7 +36,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '18'
+          node-version: '22'
       - name: Install JS Dependencies
         run: npm install
       - name: Build JS Packages
@@ -82,8 +82,8 @@ jobs:
           name: core-mt-pkg
           path: packages/core-mt
 
-  package-and-commit:
-    name: Package and Commit Builds
+  package-artifacts:
+    name: Package builds
     runs-on: ubuntu-latest
     needs: [build-st-and-js, build-mt]
     steps:
