@@ -5,19 +5,26 @@
 #   This GitHub Actions workflow automates the entire process of building, packaging,
 #   and releasing the custom audio-only ffmpeg.wasm builds.
 #
-# VERSION: 1.1
+# VERSION: 1.2
 #
 # CHANGE LOG:
+#   - v1.2:
+#     - Added the `workflow_dispatch` trigger. This allows the workflow to be run
+#       manually from the GitHub Actions UI, which is useful for testing changes
+#       to the workflow file itself or for manually re-running a release.
 #   - v1.1:
 #     - FIXED BUG-001: Added a "Build Docker Image" step to the `build-audio-st-core`
-#       and `build-audio-mt-core` jobs. This resolves the "image not found" error
-#       by ensuring the `ffmpeg-wasm-builder` image is built before being used.
+#       and `build-audio-mt-core` jobs.
 #
 ####################################################################################################
 
 name: "Custom Audio Build & Release"
 
 on:
+  # This is the new trigger. It enables the "Run workflow" button in the UI.
+  workflow_dispatch:
+
+  # This is the existing automatic trigger.
   push:
     branches:
       - main
@@ -37,7 +44,6 @@ jobs:
         uses: actions/checkout@v4
       - name: "Setup Docker Buildx"
         uses: docker/setup-buildx-action@v3
-      # FIX: This step builds the local Docker image required by the Makefile's build commands.
       - name: "Build Docker Image"
         run: make build-image
       - name: "Build ST Audio Core"
@@ -59,7 +65,6 @@ jobs:
         uses: actions/checkout@v4
       - name: "Setup Docker Buildx"
         uses: docker/setup-buildx-action@v3
-      # FIX: This step builds the local Docker image required by the Makefile's build commands.
       - name: "Build Docker Image"
         run: make build-image
       - name: "Build MT Audio Core"
