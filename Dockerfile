@@ -1,23 +1,3 @@
-#
-# FILE: Dockerfile
-#
-# DESCRIPTION:
-#   This Dockerfile is a minimally modified version of the original, designed to
-#   create a custom, audio-only build of ffmpeg.wasm. All modifications are
-#   done by commenting out unnecessary lines and adding the required audio
-#   configuration, preserving the original structure for clarity and maintenance.
-#
-# VERSION: 7.0
-#
-# CHANGE LOG:
-#   - v7.0:
-#     - CORRECTED: Added the final `exporter` stage to ensure build artifacts
-#       can be extracted, as per user direction.
-#     - All other changes follow the user-approved methodology of commenting out
-#       and adding lines to the original file.
-#
-####################################################################################################
-
 # syntax=docker/dockerfile-upstream:master-labs
 
 # Base emsdk image with environment variables.
@@ -47,166 +27,122 @@ RUN apt-get update && \
 # COPY build/x264.sh /src/build.sh
 # RUN bash -x /src/build.sh
 
-# # Build x265
-# FROM emsdk-base AS x265-builder
-# ENV X265_TAG=3.5
-# ADD https://github.com/videolan/x265/archive/refs/tags/$X265_TAG.tar.gz /src.tar.gz
-# RUN tar -zxf /src.tar.gz && \
-#     rm /src.tar.gz && \
-#     mv x265_$X265_TAG /src
-# COPY build/x265.sh /src/build.sh
-# RUN bash -x /src/build.sh
+# Build x265
+#FROM emsdk-base AS x265-builder
+#ENV X265_BRANCH=3.4
+#ADD https://github.com/ffmpegwasm/x265.git#$X265_BRANCH /src
+#COPY build/x265.sh /src/build.sh
+#RUN bash -x /src/build.sh
 
-# # Build libvpx
-# FROM emsdk-base AS libvpx-builder
-# ENV LIBVPX_VERSION=1.12.0
-# ADD https://github.com/webmproject/libvpx/archive/refs/tags/v$LIBVPX_VERSION.tar.gz /src.tar.gz
-# RUN tar -zxf /src.tar.gz && \
-#     rm /src.tar.gz && \
-#     mv libvpx-$LIBVPX_VERSION /src
-# COPY build/libvpx.sh /src/build.sh
-# RUN bash -x /src/build.sh
+# Build libvpx
+#FROM emsdk-base AS libvpx-builder
+#ENV LIBVPX_BRANCH=v1.13.1
+#ADD https://github.com/ffmpegwasm/libvpx.git#$LIBVPX_BRANCH /src
+#COPY build/libvpx.sh /src/build.sh
+#RUN bash -x /src/build.sh
 
 # Build lame
 FROM emsdk-base AS lame-builder
-ENV LAME_VERSION=3.100
-ADD https://sourceforge.net/projects/lame/files/lame/$LAME_VERSION/lame-$LAME_VERSION.tar.gz /src.tar.gz
-RUN tar -zxf /src.tar.gz && \
-    rm /src.tar.gz && \
-    mv lame-$LAME_VERSION /src
+ENV LAME_BRANCH=master
+ADD https://github.com/ffmpegwasm/lame.git#$LAME_BRANCH /src
 COPY build/lame.sh /src/build.sh
 RUN bash -x /src/build.sh
 
 # Build ogg
 FROM emsdk-base AS ogg-builder
-ENV OGG_VERSION=1.3.5
-ADD https://downloads.xiph.org/releases/ogg/libogg-$OGG_VERSION.tar.gz /src.tar.gz
-RUN tar -zxf /src.tar.gz && \
-    rm /src.tar.gz && \
-    mv libogg-$OGG_VERSION /src
+ENV OGG_BRANCH=v1.3.4
+ADD https://github.com/ffmpegwasm/Ogg.git#$OGG_BRANCH /src
 COPY build/ogg.sh /src/build.sh
 RUN bash -x /src/build.sh
 
-# Build vorbis
-FROM ogg-builder AS vorbis-builder
-ENV VORBIS_VERSION=1.3.7
-ADD https://downloads.xiph.org/releases/vorbis/libvorbis-$VORBIS_VERSION.tar.gz /src.tar.gz
-RUN tar -zxf /src.tar.gz && \
-    rm /src.tar.gz && \
-    mv libvorbis-$VORBIS_VERSION /src
-COPY build/vorbis.sh /src/build.sh
-RUN bash -x /src/build.sh
-
-# # Build theora
-# FROM vorbis-builder AS theora-builder
-# ENV THEORA_VERSION=1.1.1
-# ADD https://downloads.xiph.org/releases/theora/libtheora-$THEORA_VERSION.tar.gz /src.tar.gz
-# RUN tar -zxf /src.tar.gz && \
-#     rm /src.tar.gz && \
-#     mv libtheora-$THEORA_VERSION /src
-# COPY build/theora.sh /src/build.sh
-# RUN bash -x /src/build.sh
+# Build theora
+#FROM emsdk-base AS theora-builder
+#COPY --from=ogg-builder $INSTALL_DIR $INSTALL_DIR
+#ENV THEORA_BRANCH=v1.1.1
+#ADD https://github.com/ffmpegwasm/theora.git#$THEORA_BRANCH /src
+#COPY build/theora.sh /src/build.sh
+#RUN bash -x /src/build.sh
 
 # Build opus
 FROM emsdk-base AS opus-builder
-ENV OPUS_VERSION=1.3.1
-ADD https://archive.mozilla.org/pub/opus/opus-$OPUS_VERSION.tar.gz /src.tar.gz
-RUN tar -zxf /src.tar.gz && \
-    rm /src.tar.gz && \
-    mv opus-$OPUS_VERSION /src
+ENV OPUS_BRANCH=v1.3.1
+ADD https://github.com/ffmpegwasm/opus.git#$OPUS_BRANCH /src
 COPY build/opus.sh /src/build.sh
 RUN bash -x /src/build.sh
 
+# Build vorbis
+#FROM emsdk-base AS vorbis-builder
+#COPY --from=ogg-builder $INSTALL_DIR $INSTALL_DIR
+#ENV VORBIS_BRANCH=v1.3.3
+#ADD https://github.com/ffmpegwasm/vorbis.git#$VORBIS_BRANCH /src
+#COPY build/vorbis.sh /src/build.sh
+#RUN bash -x /src/build.sh
+
 # Build zlib
-FROM emsdk-base AS zlib-builder
-ENV ZLIB_VERSION=1.2.13
-ADD https://www.zlib.net/zlib-$ZLIB_VERSION.tar.gz /src.tar.gz
-RUN tar -zxf /src.tar.gz && \
-    rm /src.tar.gz && \
-    mv zlib-$ZLIB_VERSION /src
-COPY build/zlib.sh /src/build.sh
-RUN bash -x /src/build.sh
+#FROM emsdk-base AS zlib-builder
+#ENV ZLIB_BRANCH=v1.2.11
+#ADD https://github.com/ffmpegwasm/zlib.git#$ZLIB_BRANCH /src
+#COPY build/zlib.sh /src/build.sh
+#RUN bash -x /src/build.sh
 
-# # Build libwebp
-# FROM zlib-builder AS libwebp-builder
-# ENV LIBWEBP_VERSION=1.3.0
-# ADD https://storage.googleapis.com/downloads.webmproject.org/releases/webp/libwebp-$LIBWEBP_VERSION.tar.gz /src.tar.gz
-# RUN tar -zxf /src.tar.gz && \
-#     rm /src.tar.gz && \
-#     mv libwebp-$LIBWEBP_VERSION /src
-# COPY build/libwebp.sh /src/build.sh
-# RUN bash -x /src/build.sh
+## Build libwebp
+#FROM emsdk-base AS libwebp-builder
+#COPY --from=zlib-builder $INSTALL_DIR $INSTALL_DIR
+#ENV LIBWEBP_BRANCH=v1.3.2
+#ADD https://github.com/ffmpegwasm/libwebp.git#$LIBWEBP_BRANCH /src
+#COPY build/libwebp.sh /src/build.sh
+#RUN bash -x /src/build.sh
 
-# # Build freetype2
-# FROM zlib-builder AS freetype2-builder
-# ENV FREETYPE2_VERSION=2.13.0
-# ADD https://download.savannah.gnu.org/releases/freetype/freetype-$FREETYPE2_VERSION.tar.gz /src.tar.gz
-# RUN tar -zxf /src.tar.gz && \
-#     rm /src.tar.gz && \
-#     mv freetype-$FREETYPE2_VERSION /src
-# COPY build/freetype2.sh /src/build.sh
-# RUN bash -x /src/build.sh
+## Build freetype2
+#FROM emsdk-base AS freetype2-builder
+#ENV FREETYPE2_BRANCH=VER-2-10-4
+#ADD https://github.com/ffmpegwasm/freetype2.git#$FREETYPE2_BRANCH /src
+#COPY build/freetype2.sh /src/build.sh
+#RUN bash -x /src/build.sh
 
-# # Build fribidi
-# FROM emsdk-base AS fribidi-builder
-# ENV FRIBIDI_VERSION=1.0.12
-# ADD https://github.com/fribidi/fribidi/releases/download/v$FRIBIDI_VERSION/fribidi-$FRIBIDI_VERSION.tar.xz /src.tar.xz
-# RUN apt-get update && apt-get install -y xz-utils && \
-#     tar -xf /src.tar.xz && \
-#     rm /src.tar.xz && \
-#     mv fribidi-$FRIBIDI_VERSION /src
-# COPY build/fribidi.sh /src/build.sh
-# RUN bash -x /src/build.sh
+## Build fribidi
+#FROM emsdk-base AS fribidi-builder
+#ENV FRIBIDI_BRANCH=v1.0.9
+#ADD https://github.com/fribidi/fribidi.git#$FRIBIDI_BRANCH /src
+#COPY build/fribidi.sh /src/build.sh
+#RUN bash -x /src/build.sh
 
-# # Build harfbuzz
-# FROM freetype2-builder AS harfbuzz-builder
-# COPY --from=fribidi-builder $INSTALL_DIR $INSTALL_DIR
-# ENV HARFBUZZ_VERSION=7.2.0
-# ADD https://github.com/harfbuzz/harfbuzz/releases/download/$HARFBUZZ_VERSION/harfbuzz-$HARFBUZZ_VERSION.tar.xz /src.tar.xz
-# RUN apt-get update && apt-get install -y xz-utils && \
-#     tar -xf /src.tar.xz && \
-#     rm /src.tar.xz && \
-#     mv harfbuzz-$HARFBUZZ_VERSION /src
-# COPY build/harfbuzz.sh /src/build.sh
-# RUN bash -x /src/build.sh
+## Build harfbuzz
+#FROM emsdk-base AS harfbuzz-builder
+#ENV HARFBUZZ_BRANCH=5.2.0
+#ADD https://github.com/harfbuzz/harfbuzz.git#$HARFBUZZ_BRANCH /src
+#COPY build/harfbuzz.sh /src/build.sh
+#RUN bash -x /src/build.sh
 
-# # Build libass
-# FROM harfbuzz-builder AS libass-builder
-# ENV LIBASS_VERSION=0.17.1
-# ADD https://github.com/libass/libass/releases/download/$LIBASS_VERSION/libass-$LIBASS_VERSION.tar.gz /src.tar.gz
-# RUN tar -zxf /src.tar.gz && \
-#     rm /src.tar.gz && \
-#     mv libass-$LIBASS_VERSION /src
-# COPY build/libass.sh /src/build.sh
-# RUN bash -x /src/build.sh
+# Build libass
+#FROM emsdk-base AS libass-builder
+#COPY --from=freetype2-builder $INSTALL_DIR $INSTALL_DIR
+#COPY --from=fribidi-builder $INSTALL_DIR $INSTALL_DIR
+#COPY --from=harfbuzz-builder $INSTALL_DIR $INSTALL_DIR
+#ENV LIBASS_BRANCH=0.15.0
+#ADD https://github.com/libass/libass.git#$LIBASS_BRANCH /src
+#COPY build/libass.sh /src/build.sh
+#RUN bash -x /src/build.sh
 
-# # Build zimg
-# FROM emsdk-base AS zimg-builder
-# ENV ZIMG_VERSION=3.0.4
-# ADD https://github.com/sekrit-twc/zimg/archive/refs/tags/release-$ZIMG_VERSION.tar.gz /src.tar.gz
-# RUN tar -zxf /src.tar.gz && \
-#     rm /src.tar.gz && \
-#     mv zimg-release-$ZIMG_VERSION /src
-# COPY build/zimg.sh /src/build.sh
-# RUN bash -x /src/build.sh
+# Build zimg
+#FROM emsdk-base AS zimg-builder
+#ENV ZIMG_BRANCH=release-3.0.5
+#RUN apt-get update && apt-get install -y git
+#RUN git clone --recursive -b $ZIMG_BRANCH https://github.com/sekrit-twc/zimg.git /src
+#COPY build/zimg.sh /src/build.sh
+#RUN bash -x /src/build.sh
 
-# Base image with UID/GID and ffmpeg source code.
+# Base ffmpeg image with dependencies and source code populated.
 FROM emsdk-base AS ffmpeg-base
-# ENV UID=1000 GID=1000
-# RUN addgroup --gid $GID emscripten || true && \
-#     adduser --disabled-password --gecos "" --uid $UID --gid $GID emscripten
-# USER emscripten
-WORKDIR /src
-ADD https://github.com/FFmpeg/FFmpeg/archive/refs/tags/$FFMPEG_VERSION.tar.gz /src.tar.gz
-RUN tar -zxf /src.tar.gz && \
-    rm /src.tar.gz && \
-    mv FFmpeg-$FFMPEG_VERSION ffmpeg
-# COPY --from=x264-builder $INSTALL_DIR $INSTALL_DIR
-# COPY --from=x265-builder $INSTALL_DIR $INSTALL_DIR
-# COPY --from=libvpx-builder $INSTALL_DIR $INSTALL_DIR
+RUN embuilder build sdl2 sdl2-mt
+ADD https://github.com/FFmpeg/FFmpeg.git#$FFMPEG_VERSION /src
+#COPY --from=x264-builder $INSTALL_DIR $INSTALL_DIR
+#COPY --from=x265-builder $INSTALL_DIR $INSTALL_DIR
+#COPY --from=libvpx-builder $INSTALL_DIR $INSTALL_DIR
 COPY --from=lame-builder $INSTALL_DIR $INSTALL_DIR
-# COPY --from=theora-builder $INSTALL_DIR $INSTALL_DIR
 COPY --from=opus-builder $INSTALL_DIR $INSTALL_DIR
+# COPY --from=theora-builder $INSTALL_DIR $INSTALL_DIR
+#COPY --from=vorbis-builder $INSTALL_DIR $INSTALL_DIR
 # COPY --from=libwebp-builder $INSTALL_DIR $INSTALL_DIR
 # COPY --from=libass-builder $INSTALL_DIR $INSTALL_DIR
 # COPY --from=zimg-builder $INSTALL_DIR $INSTALL_DIR
@@ -234,7 +170,7 @@ RUN bash -x /src/build.sh \
       --enable-demuxer=mov,matroska,mp3,ogg,flac,wav \
       --enable-muxer=mp4,mp3,ogg,flac,wav \
       --enable-parser=aac,flac,mpegaudio,opus \
-      --enable-filter=aformat,highpass,afftdn,deesser,loudnorm,astats,ametadata,adynamicequalizer,alimiter,agate,equalizer,asoftclip
+      --enable-filter=null,anull,aformat,highpass,afftdn,deesser,loudnorm,astats,ametadata,adynamicequalizer,alimiter,agate,equalizer,asoftclip
 # OLD: Original build configuration is now commented out
 # RUN bash -x /src/build.sh \
 #       --enable-gpl \
@@ -290,6 +226,7 @@ RUN mkdir -p /src/dist/umd && bash -x /src/build.sh \
       -o dist/umd/ffmpeg-core.js
 RUN mkdir -p /src/dist/esm && bash -x /src/build.sh \
       ${FFMPEG_LIBS} \
+      -sEXPORT_ES6 \
       -o dist/esm/ffmpeg-core.js
 
 # Export ffmpeg-core.wasm to dist/, use `docker buildx build -o . .` to get assets

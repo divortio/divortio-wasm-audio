@@ -1,38 +1,16 @@
-#
-# FILE: .github/workflows/build.yml
-#
-# DESCRIPTION:
-#   This workflow builds and releases our custom, audio-only version of ffmpeg.wasm.
-#   It uses the official CI job structure and mirrors its best practices, including
-#   a comprehensive hashing strategy for cache and versioning.
-#
-# VERSION: 5.0
-#
-# CHANGE LOG:
-#   - v5.0:
-#     - CORRECTED: Aligned the release versioning hash with the official CI's
-#       caching hash (`hashFiles('Dockerfile', 'Makefile', 'build/*')`). This
-#       ensures any change to the build system triggers a new release.
-#
-####################################################################################################
-
 name: CI
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - main
     paths:
       # Any change to the build system will now trigger a new release.
       - 'Dockerfile'
       - 'Makefile'
       - 'build/**'
-
+      - push:
+          branches:
+            - main
 jobs:
-  # --- PRIMARY BUILD JOBS ---
-  # These jobs now use a robust cache key that looks at all build-related files.
-
   build-core:
     runs-on: ubuntu-latest
     steps:
@@ -51,14 +29,13 @@ jobs:
           key: build-cache-st-v1-${{ hashFiles('Dockerfile', 'Makefile', 'build/*') }}
           restore-keys: |
             build-cache-st-v1-
-      - name: Build Custom ffmpeg-core (ST)
+      - name: Build ffmpeg-core
         run: make prd EXTRA_ARGS="--cache-from=type=local,src=build-cache-st --cache-to=type=local,dest=build-cache-st,mode=max"
       - name: Upload core
         uses: actions/upload-artifact@v4
         with:
-          name: ffmpeg-core-st-dist
+          name: ffmpeg-core
           path: packages/core/dist/*
-
   build-core-mt:
     runs-on: ubuntu-latest
     steps:
@@ -75,16 +52,13 @@ jobs:
           key: build-cache-mt-v1-${{ hashFiles('Dockerfile', 'Makefile', 'build/*') }}
           restore-keys: |
             build-cache-v1-
-      - name: Build Custom ffmpeg-core (MT)
+      - name: Build ffmpet-core-mt
         run: make prd-mt EXTRA_ARGS="--cache-from=type=local,src=build-cache-mt --cache-to=type=local,dest=build-cache-mt,mode=max"
       - name: Upload core-mt
         uses: actions/upload-artifact@v4
         with:
-          name: ffmpeg-core-mt-dist
+          name: ffmpeg-core-mt
           path: packages/core-mt/dist/*
-
-  # --- JAVASCRIPT & TYPESCRIPT BUILD JOB ---
-
   build-js-packages:
     runs-on: ubuntu-latest
     steps:
