@@ -6,14 +6,16 @@
 #   all necessary dependencies, including the Emscripten SDK, build-essential tools,
 #   and other required libraries.
 #
-# VERSION: 1.1
+# VERSION: 1.2
 #
 # CHANGE LOG:
+#   - v1.2:
+#     - FIXED BUG-003: Replaced the non-idempotent `adduser`/`addgroup` command with a
+#       more robust script that checks for the existence of the user and group before
+#       creation. This prevents build failures caused by changes in the base image.
 #   - v1.1:
 #     - FIXED BUG-002: Removed the final `RUN` commands that attempted to execute a
-#       build within the Dockerfile itself. This simplifies the image's responsibility
-#       to only providing a build environment, allowing the Makefile to orchestrate
-#       the actual compilation.
+#       build within the Dockerfile itself.
 #
 ####################################################################################################
 
@@ -46,14 +48,14 @@ ENV PATH=/opt/wasi-sdk/bin:$PATH \
     LDFLAGS="-L/opt/wasi-sdk/share/wasi-sysroot/lib/wasm32-wasi"
 
 # 3. Create a non-root user
+# This command is now idempotent. It checks if the group and user already exist before
+# trying to create them, which prevents errors if the base image changes.
 ENV UID=1000 GID=1000
-RUN addgroup --gid $GID emscripten && \
-    adduser --disabled-password --gecos "" --uid $UID --gid $GID emscripten
+RUN if ! getent group emscripten > /dev/null; then \
+        addgroup --gid $GID emscripten; \
+    fi && \
+    if ! getent passwd emscripten > /dev/null; then \
+        adduser --disabled-password --gecos "" --uid $UID --gid $GID emscripten; \
+    fi
 USER emscripten
 WORKDIR /src
-
-#
-# The original Dockerfile had RUN commands here to build the project.
-# These have been REMOVED as our Makefile now controls the build process.
-# The Docker image's only job is to provide this environment.
-#
